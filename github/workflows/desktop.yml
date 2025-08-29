@@ -1,0 +1,95 @@
+name: Desktop CI
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller opencv-python
+      - name: Build EXE (viewer)
+        working-directory: desktop/python
+        run: |
+          echo from rtsp_view_opencv import main > __main__.py
+          python - << "PY"
+import shutil, sys, os
+# Create a small entrypoint that prompts for IP and opens the stream
+open("viewcast_viewer.py","w").write(r'''
+import sys
+import cv2
+def main():
+    ip = sys.argv[1] if len(sys.argv) > 1 else input("Phone IP: ")
+    url = f"rtsp://{ip}:8554/stream"
+    cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+    if not cap.isOpened():
+        print("Cannot open stream", url); return
+    print("Press ESC to quit")
+    while True:
+        ok, frame = cap.read()
+        if not ok: break
+        cv2.imshow("ViewCast Viewer", frame)
+        if cv2.waitKey(1) & 0xFF == 27: break
+    cap.release(); cv2.destroyAllWindows()
+if __name__ == "__main__": main()
+''')
+PY
+          pyinstaller --onefile viewcast_viewer.py --name ViewCastViewer --icon ..\\windows\\icon.ico
+      - name: Upload artifact (Windows)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ViewCastViewer-win
+          path: desktop/python/dist/ViewCastViewer.exe
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller opencv-python
+      - name: Build app bundle
+        working-directory: desktop/python
+        run: |
+          python - << "PY"
+open("viewcast_viewer.py","w").write(r'''
+import sys, cv2
+def main():
+    ip = sys.argv[1] if len(sys.argv) > 1 else input("Phone IP: ")
+    url = f"rtsp://{ip}:8554/stream"
+    cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+    if not cap.isOpened():
+        print("Cannot open stream", url); return
+    import os; os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
+    print("Press ESC to quit")
+    import numpy as np
+    while True:
+        ok, frame = cap.read()
+        if not ok: break
+        import cv2 as cv
+        cv.imshow("ViewCast Viewer", frame)
+        if cv.waitKey(1) & 0xFF == 27: break
+    cap.release(); cv.destroyAllWindows()
+if __name__ == "__main__": main()
+''')
+PY
+          pyinstaller --onefile viewcast_viewer.py --name ViewCastViewer --icon ../macos/icon.icns
+      - name: Upload artifact (macOS)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ViewCastViewer-mac
+          path: desktop/python/dist/ViewCastViewer

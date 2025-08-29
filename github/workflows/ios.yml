@@ -1,0 +1,59 @@
+name: iOS CI
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install provisioning (optional for unsigned build)
+        if: ${{ secrets.APPLE_TEAM_ID != '' }}
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          # Décryptez vos certificats/profiles si vous les fournissez
+          echo "Provisioning step placeholder"
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild -resolvePackageDependencies -project ios/ViewCast.xcodeproj
+
+      - name: Build iOS (Debug)
+        run: |
+          xcodebuild \
+            -project ios/ViewCast.xcodeproj \
+            -scheme ViewCast \
+            -configuration Debug \
+            -sdk iphoneos \
+            build CODE_SIGNING_ALLOWED=NO
+
+      - name: Archive (unsigned .xcarchive)
+        run: |
+          xcodebuild \
+            -project ios/ViewCast.xcodeproj \
+            -scheme ViewCast \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath $PWD/build/ViewCast.xcarchive \
+            archive CODE_SIGNING_ALLOWED=NO
+
+      - name: Export IPA (Ad-hoc unsigned)
+        run: |
+          mkdir -p build/export
+          # Export sans signature pour artefact; signature requise pour installation réelle
+          pushd build && zip -r ViewCast.xcarchive.zip ViewCast.xcarchive && popd
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-archives
+          path: build/ViewCast.xcarchive.zip

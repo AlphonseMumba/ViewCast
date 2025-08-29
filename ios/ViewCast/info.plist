@@ -1,0 +1,6 @@
+<key>NSMicrophoneUsageDescription</key>
+<string>Audio pour la capture</string>
+<key>UIBackgroundModes</key>
+<array>
+    <string>audio</string>
+</array>

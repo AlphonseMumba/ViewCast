@@ -1,0 +1,5 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:orientation="vertical" android:padding="16dp" android:layout_width="match_parent" android:layout_height="match_parent">
+<Button android:id="@+id/btnDiscover" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Découvrir appareils (Wi‑Fi Direct)"/>
+<ListView android:id="@+id/listPeers" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>
+<Button android:id="@+id/btnStartCast" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Démarrer diffusion (RTSP)"/>
+</LinearLayout>
