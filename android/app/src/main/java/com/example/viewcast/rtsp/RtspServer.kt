@@ -53,7 +53,7 @@ class RtspServer(private val scope: CoroutineScope, private val port: Int = 8554
 
             when (method) {
                 "OPTIONS" -> {
-                    respond(out, cseq, "Public: OPTIONS, DESCRIBE, SETUP, PLAY")
+                    respond(out, cseq, extraHeaders = listOf("Public: OPTIONS, DESCRIBE, SETUP, PLAY"))
                 }
                 "DESCRIBE" -> {
                     val spsLocal = sps ?: ByteBuffer.allocate(0)

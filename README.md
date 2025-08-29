@@ -57,3 +57,56 @@ Rendez-vous dans l’onglet "Releases" de GitHub:
   - Vous devriez voir l’écran du téléphone.
 
 Astuce: si ça ne marche pas, essayez avec FFmpeg/ffplay:
+
+```bash
+# Remplacez <IP_DU_TÉLÉPHONE> par l'adresse IP de votre téléphone
+ffplay -rtsp_transport tcp rtsp://<IP_DU_TÉLÉPHONE>:8554/stream
+```
+
+## Plateformes
+
+- Android: 8.0 (API 26) ou supérieur, ARM64.
+- iOS: iOS 11.0 ou supérieur, ARM64.
+- Windows: 10 ou supérieur, x64.
+- macOS: 10.13 (High Sierra) ou supérieur, x64.
+
+## Réseau hors connexion
+
+### Android
+
+1. Activez le Wi‑Fi Direct sur le téléphone.
+2. Connectez l’ordinateur au réseau Wi‑Fi Direct du téléphone.
+3. Ouvrez ViewCast sur le téléphone et démarrez la diffusion.
+4. Sur l’ordinateur, utilisez l’URL `rtsp://<IP_DU_TÉLÉPHONE>:8554/stream` dans le viewer.
+
+### iOS
+
+1. Activez le "Partage de connexion" sur l’iPhone.
+2. Connectez l’ordinateur au réseau Hotspot de l’iPhone.
+3. Ouvrez ViewCast sur l’iPhone et démarrez la diffusion.
+4. Sur l’ordinateur, utilisez l’URL `rtsp://<IP_DU_TÉLÉPHONE>:8554/stream` dans le viewer.
+
+## Sécurité
+
+- Changez le mot de passe par défaut du Wi‑Fi Direct sur Android.
+- Utilisez un mot de passe fort pour le Hotspot sur iOS.
+- Ne partagez pas l’URL RTSP publiquement.
+
+## Builds automatiques (CI)
+
+[![Android CI](https://github.com/<user>/<repo>/actions/workflows/android.yml/badge.svg)](github/workflows/android.yml)
+[![iOS CI](https://github.com/<user>/<repo>/actions/workflows/ios.yml/badge.svg)](github/workflows/ios.yml)
+[![Desktop CI](https://github.com/<user>/<repo>/actions/workflows/desktop.yml/badge.svg)](github/workflows/desktop.yml)
+
+## Développeurs
+
+Pour contribuer:
+1. Fork ce dépôt.
+2. Créez une branche pour votre fonctionnalité (`git checkout -b ma-fonctionnalité`).
+3. Commitez vos changements (`git commit -m 'Ajoute une fonctionnalité'`).
+4. Poussez vers votre fork (`git push origin ma-fonctionnalité`).
+5. Ouvrez une Pull Request.
+
+## Licence
+
+Voir [security/LICENCE](security/LICENCE).
