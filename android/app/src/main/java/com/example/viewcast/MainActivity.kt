@@ -5,9 +5,19 @@ import android.content.Intent
 import android.net.wifi.p2p.WifiP2pDevice
 import android.os.Build
 import android.os.Bundle
-import android.widget.*
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.viewcast.rtsp.ScreenCastService
@@ -15,21 +25,27 @@ import com.example.viewcast.wifi.WiFiDirectHelper
 import kotlinx.coroutines.launch
 import java.net.NetworkInterface
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
 
     private lateinit var wifi: WiFiDirectHelper
-    private lateinit var listView: ListView
-    private lateinit var btnDiscover: Button
-    private lateinit var btnStartCast: Button
-    private lateinit var txtStatus: TextView
-    private lateinit var txtUrl: TextView
-    private val peers = mutableListOf<WifiP2pDevice>()
+    private val peers = mutableStateListOf<WifiP2pDevice>()
+    private var status by mutableStateOf("Statut: prêt")
+    private var url by mutableStateOf("URL: rtsp://${guessLocalIp()}:8554/stream")
+
+    // Configuration options
+    private var resolution by mutableStateOf("1280x720")
+    private var bitrate by mutableStateOf(6_000_000f)
+    private var fps by mutableStateOf(30f)
 
     private val projectionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         if (res.resultCode == Activity.RESULT_OK && res.data != null) {
             val i = Intent(this, ScreenCastService::class.java).apply {
                 putExtra("code", res.resultCode)
                 putExtra("data", res.data)
+                putExtra("width", resolution.split("x")[0].toInt())
+                putExtra("height", resolution.split("x")[1].toInt())
+                putExtra("bitrate", bitrate.toInt())
+                putExtra("fps", fps.toInt())
             }
             if (Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
             Toast.makeText(this, "Diffusion démarrée", Toast.LENGTH_SHORT).show()
@@ -40,66 +56,126 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-
-        txtStatus = findViewById(R.id.txtStatus)
-        txtUrl = findViewById(R.id.txtUrl)
-        listView = findViewById(R.id.listPeers)
-        btnDiscover = findViewById(R.id.btnDiscover)
-        btnStartCast = findViewById(R.id.btnStartCast)
 
         wifi = WiFiDirectHelper(this)
         wifi.register()
 
-        // Demande des permissions à l’exécution si besoin
         requestRuntimePermissions()
 
         lifecycleScope.launch {
             wifi.events.collect { e ->
                 when (e) {
-                    is WiFiDirectHelper.Event.P2pEnabled -> txtStatus.text = "Statut: Wi‑Fi Direct activé"
+                    is WiFiDirectHelper.Event.P2pEnabled -> status = "Statut: Wi‑Fi Direct activé"
                     is WiFiDirectHelper.Event.Peers -> {
-                        peers.clear(); peers.addAll(e.list)
-                        listView.adapter = ArrayAdapter(
-                            this@MainActivity,
-                            android.R.layout.simple_list_item_1,
-                            peers.map { it.deviceName.ifEmpty { it.deviceAddress } }
-                        )
-                        txtStatus.text = "Pairs trouvés: ${peers.size}"
+                        peers.clear()
+                        peers.addAll(e.list)
+                        status = "Pairs trouvés: ${peers.size}"
                     }
                     is WiFiDirectHelper.Event.Connected -> {
-                        txtStatus.text = "Connecté en P2P"
-                        txtUrl.text = "URL: rtsp://${guessLocalIp()}:8554/stream"
+                        status = "Connecté en P2P"
                         val ip = e.info.groupOwnerAddress?.hostAddress ?: guessLocalIp()
-                        txtUrl.text = "URL: rtsp://$ip:8554/stream"
+                        url = "URL: rtsp://$ip:8554/stream"
                     }
                     is WiFiDirectHelper.Event.Disconnected -> {
-                        txtStatus.text = "Déconnecté"
+                        status = "Déconnecté"
                     }
                     is WiFiDirectHelper.Event.Error -> {
-                        txtStatus.text = "Erreur: ${e.msg}"
+                        status = "Erreur: ${e.msg}"
                     }
                 }
             }
         }
 
-        btnDiscover.setOnClickListener {
-            wifi.discoverPeers()
-            txtStatus.text = "Recherche en cours..."
+        setContent {
+            ViewCastApp()
         }
+    }
 
-        listView.setOnItemClickListener { _, _, pos, _ ->
-            wifi.connect(peers[pos])
-            txtStatus.text = "Connexion à ${peers[pos].deviceName}..."
+    @Composable
+    fun ViewCastApp() {
+        val context = LocalContext.current
+        MaterialTheme {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(text = status, style = MaterialTheme.typography.headlineSmall)
+
+                // Configuration
+                Text("Configuration", style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Résolution:")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    var expanded by remember { mutableStateOf(false) }
+                    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+                        TextField(
+                            value = resolution,
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                            modifier = Modifier.menuAnchor()
+                        )
+                        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            listOf("1280x720", "1920x1080", "720x480").forEach { res ->
+                                DropdownMenuItem(text = { Text(res) }, onClick = {
+                                    resolution = res
+                                    expanded = false
+                                })
+                            }
+                        }
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Bitrate (Mbps): ${bitrate / 1_000_000}")
+                    Slider(
+                        value = bitrate,
+                        onValueChange = { bitrate = it },
+                        valueRange = 2_000_000f..10_000_000f,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("FPS: ${fps.toInt()}")
+                    Slider(
+                        value = fps,
+                        onValueChange = { fps = it },
+                        valueRange = 15f..60f,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Button(onClick = {
+                    wifi.discoverPeers()
+                    status = "Recherche en cours..."
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Découvrir appareils (Wi‑Fi Direct)")
+                }
+
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(peers) { peer ->
+                        Card(modifier = Modifier.fillMaxWidth().padding(4.dp)) {
+                            Text(
+                                text = peer.deviceName.ifEmpty { peer.deviceAddress },
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    }
+                }
+
+                Button(onClick = {
+                    val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+                    projectionLauncher.launch(mpm.createScreenCaptureIntent())
+                }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Démarrer diffusion (RTSP)")
+                }
+
+                Text(text = url)
+            }
         }
-
-        btnStartCast.setOnClickListener {
-            val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
-            projectionLauncher.launch(mpm.createScreenCaptureIntent())
-        }
-
-        // Affiche une IP probable par défaut
-        txtUrl.text = "URL: rtsp://${guessLocalIp()}:8554/stream"
     }
 
     private fun requestRuntimePermissions() {
@@ -117,7 +193,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun guessLocalIp(): String {
-        // Tente de récupérer une IP locale (Wi‑Fi/Direct). Sinon 192.168.49.1 par défaut (GO Wi‑Fi Direct)
         return try {
             val ips = NetworkInterface.getNetworkInterfaces().toList().flatMap { ni ->
                 ni.inetAddresses.toList().map { it.hostAddress ?: "" }

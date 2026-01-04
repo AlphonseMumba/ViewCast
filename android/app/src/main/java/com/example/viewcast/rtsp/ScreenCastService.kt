@@ -27,7 +27,11 @@ class ScreenCastService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val resultCode = intent?.getIntExtra("code", Activity.RESULT_CANCELED) ?: Activity.RESULT_CANCELED
         val data = intent?.getParcelableExtra<Intent>("data")!!
-        capture = ScreenCapture(this, scope, width = 1280, height = 720, bitrate = 6_000_000, fps = 30)
+        val width = intent.getIntExtra("width", 1280)
+        val height = intent.getIntExtra("height", 720)
+        val bitrate = intent.getIntExtra("bitrate", 6_000_000)
+        val fps = intent.getIntExtra("fps", 30)
+        capture = ScreenCapture(this, scope, width = width, height = height, bitrate = bitrate, fps = fps)
         capture.onSpsPps = { sps, pps -> rtsp.updateSpsPps(sps, pps) }
         capture.onEncodedFrame = { buf, info ->
             val bytes = ByteArray(info.size)
