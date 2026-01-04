@@ -55,6 +55,14 @@ class RtspServer {
             } else if req.starts(with: "PLAY") {
                 let resp = "RTSP/1.0 200 OK\r\nCSeq: \(cseq)\r\nRTP-Info: url=rtsp://localhost/trackID=1;seq=0\r\n\r\n"
                 conn.send(content: resp.data(using: .utf8), completion: .contentProcessed({ _ in }))
+            } else if req.starts(with: "PAUSE") {
+                let resp = "RTSP/1.0 200 OK\r\nCSeq: \(cseq)\r\n\r\n"
+                conn.send(content: resp.data(using: .utf8), completion: .contentProcessed({ _ in }))
+            } else if req.starts(with: "TEARDOWN") {
+                let resp = "RTSP/1.0 200 OK\r\nCSeq: \(cseq)\r\n\r\n"
+                conn.send(content: resp.data(using: .utf8), completion: .contentProcessed({ _ in }))
+                // Close connection
+                conn.cancel()
             }
             if !isComplete { self.receiveRequest(on: conn) }
         }

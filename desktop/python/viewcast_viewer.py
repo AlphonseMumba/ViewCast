@@ -1,12 +1,18 @@
 import sys
 import cv2
+import tkinter as tk
+from tkinter import simpledialog
 
 def main():
     print("=== ViewCast Viewer ===")
-    ip = sys.argv[1] if len(sys.argv) > 1 else input("Entrez l'adresse IP du téléphone (ex: 192.168.49.1): ").strip()
+    root = tk.Tk()
+    root.withdraw()  # Hide the main window
+
+    ip = sys.argv[1] if len(sys.argv) > 1 else simpledialog.askstring("ViewCast Viewer", "Entrez l'adresse IP du téléphone (ex: 192.168.49.1):")
     if not ip:
-        print("IP manquante. Exemple: 192.168.49.1")
+        print("IP manquante.")
         return
+
     url = f"rtsp://{ip}:8554/stream"
     print(f"Connexion au flux: {url}")
     cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
