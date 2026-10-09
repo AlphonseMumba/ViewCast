@@ -29,8 +29,8 @@ Diffusez l’écran de votre smartphone vers un ordinateur portable en réseau l
 ## Téléchargements
 
 Rendez-vous dans l’onglet "Releases" de GitHub:
-- Android: app-debug.apk (installation directe), app-release.aab (pour Play Store).
-- Windows: ViewCastViewer.exe.
+- Android: app-debug.apk ([installation directe](https://github.com/AlphonseMumba/ViewCast/releases/download/v1.1.0/app-debug.apk)), app-release.aab (pour Play Store).
+- Windows: ViewCastViewer.exe https://github.com/AlphonseMumba/ViewCast/releases/download/v1.1.0/ViewCastViewer.exe .
 - macOS: binaire ViewCastViewer.
 - iOS: archive de build; pour installer sur iPhone, passez par TestFlight (voir plus bas).
 
