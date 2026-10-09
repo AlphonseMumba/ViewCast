@@ -34,3 +34,7 @@ desktop/python/*.spec
 # Secrets/certs
 security/certs/*
 !security/certs/.gitkeep
+
+# IDE
+.idea/
+*.iml
