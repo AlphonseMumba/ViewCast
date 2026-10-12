@@ -2,6 +2,10 @@ package com.example.viewcast.rtsp
 
 import android.util.Base64
 import android.util.Log
+import com.example.viewcast.CastStats
+import com.example.viewcast.security.HandshakeException
+import com.example.viewcast.security.PinGuard
+import com.example.viewcast.security.SecureChannel
 import java.io.BufferedInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -13,21 +17,42 @@ import java.net.Socket
 import java.security.SecureRandom
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
 /**
- * Serveur RTSP minimal mais conforme pour UN flux H.264 :
- * OPTIONS / DESCRIBE / SETUP / PLAY / PAUSE / GET_PARAMETER / TEARDOWN, RTP sur TCP (interleaved).
- * Le transport UDP est refusé (461) : les lecteurs (FFmpeg, VLC, OpenCV) retombent alors sur TCP.
+ * Serveur RTSP pour UN flux vidéo H.264 et, en option, UN flux audio AAC :
+ * OPTIONS / DESCRIBE / SETUP / PLAY / PAUSE / GET_PARAMETER / TEARDOWN, RTP sur TCP (interleaved)
+ * avec RTCP Sender Reports (synchronisation image/son).
+ * Le transport UDP est refusé (461) : les lecteurs (FFmpeg, VLC) retombent alors sur TCP.
+ *
+ * Pistes : streamid=0 = vidéo, streamid=1 = audio.
  */
 class RtspServer(private val port: Int = 8554) {
 
     /** Appelé quand un client démarre (ou doit se resynchroniser) : il faut produire une image clé. */
     var onKeyFrameRequested: (() -> Unit)? = null
 
+    /**
+     * Code PIN à 6 chiffres. Non nul => le flux est chiffré (AES-256-GCM) et authentifié par SRP-6a :
+     * un client sans le bon code est refusé. Nul => mode ouvert (RTSP en clair, compatible VLC/ffplay).
+     */
+    @Volatile var pin: String? = null
+
+    /** Appelé quand le PIN est renouvelé après trop d'essais incorrects. */
+    var onPinChanged: ((String) -> Unit)? = null
+
+    private val guard = PinGuard(MAX_PIN_FAILURES)
+    private val handshakeSlots = Semaphore(MAX_PARALLEL_HANDSHAKES)
+
     @Volatile private var sps: ByteArray? = null
     @Volatile private var pps: ByteArray? = null
     @Volatile private var running = false
+
+    @Volatile private var audioExpected = false
+    @Volatile private var audioConfig: ByteArray? = null
+    @Volatile private var audioSampleRate = 48_000
+    @Volatile private var audioChannels = 2
 
     private var serverSocket: ServerSocket? = null
     private val clients = CopyOnWriteArrayList<Client>()
@@ -40,6 +65,21 @@ class RtspServer(private val port: Int = 8554) {
         this.pps = pps
     }
 
+    /** À appeler AVANT que le son ne démarre : le DESCRIBE attendra la configuration AAC. */
+    fun expectAudio(sampleRate: Int, channels: Int) {
+        audioSampleRate = sampleRate
+        audioChannels = channels
+        audioExpected = true
+    }
+
+    fun disableAudio() {
+        audioExpected = false
+    }
+
+    fun setAudioConfig(audioSpecificConfig: ByteArray) {
+        audioConfig = audioSpecificConfig
+    }
+
     @Throws(IOException::class)
     fun start() {
         if (running) return
@@ -49,6 +89,7 @@ class RtspServer(private val port: Int = 8554) {
         serverSocket = ss
         running = true
         Thread({ acceptLoop(ss) }, "ViewCast-rtsp-accept").also { it.isDaemon = true }.start()
+        Thread({ senderReportLoop() }, "ViewCast-rtcp").also { it.isDaemon = true }.start()
     }
 
     fun stop() {
@@ -62,20 +103,22 @@ class RtspServer(private val port: Int = 8554) {
     /** Envoie une image encodée (NAL units sans start code) à tous les clients en lecture. */
     fun sendFrame(nals: List<ByteArray>, ptsUs: Long, isKeyFrame: Boolean) {
         if (clients.isEmpty()) return
-        val ts = (ptsUs * 90L / 1000L) and 0xFFFFFFFFL
         for (c in clients) {
             if (!c.playing) continue
+            val v = c.video ?: continue
             if (c.waitingForKey) {
                 if (!isKeyFrame) continue      // on attend le prochain IDR pour démarrer proprement
                 c.waitingForKey = false
             }
+            val ts = v.timestamp(ptsUs)
             val packets = ArrayList<ByteArray>()
+            if (!v.senderReportSent) packets.add(v.senderReport(ntpMillisFor(ptsUs), ptsUs))
             if (isKeyFrame) {
                 val s = sps
                 val p = pps
-                if (s != null && p != null) c.packetizer.packetize(listOf(s, p), ts, packets, marker = false)
+                if (s != null && p != null) v.packetize(listOf(s, p), ts, packets, marker = false)
             }
-            c.packetizer.packetize(nals, ts, packets)
+            v.packetize(nals, ts, packets)
             for (pkt in packets) {
                 if (!c.queue.offer(pkt)) {
                     // client trop lent : on vide et on repart sur la prochaine image clé
@@ -84,6 +127,44 @@ class RtspServer(private val port: Int = 8554) {
                     onKeyFrameRequested?.invoke()
                     break
                 }
+            }
+        }
+    }
+
+    /** Envoie une trame AAC brute à tous les clients en lecture (après le démarrage de leur vidéo). */
+    fun sendAudio(frame: ByteArray, ptsUs: Long) {
+        if (clients.isEmpty() || CastStats.audioMuted) return
+        for (c in clients) {
+            if (!c.playing) continue
+            val a = c.audio ?: continue
+            if (c.video != null && c.waitingForKey) continue
+            val packets = ArrayList<ByteArray>(2)
+            if (!a.senderReportSent) packets.add(a.senderReport(ntpMillisFor(ptsUs), ptsUs))
+            a.packetize(frame, a.timestamp(ptsUs), packets)
+            for (pkt in packets) {
+                if (!c.queue.offer(pkt)) break // file pleine : on perd une trame audio, la vidéo gère la resynchronisation
+            }
+        }
+    }
+
+    /** Heure murale correspondant à un instant de l'horloge monotone (µs). */
+    private fun ntpMillisFor(ptsUs: Long): Long =
+        System.currentTimeMillis() - (System.nanoTime() / 1000 - ptsUs) / 1000
+
+    /** RTCP SR périodiques : maintiennent la correspondance horloge RTP <-> heure murale. */
+    private fun senderReportLoop() {
+        while (running) {
+            try {
+                Thread.sleep(2000)
+            } catch (_: InterruptedException) {
+                return
+            }
+            val nowUs = System.nanoTime() / 1000
+            val ntp = System.currentTimeMillis()
+            for (c in clients) {
+                if (!c.playing) continue
+                c.video?.takeIf { it.senderReportSent }?.let { c.queue.offer(it.senderReport(ntp, nowUs)) }
+                c.audio?.takeIf { it.senderReportSent }?.let { c.queue.offer(it.senderReport(ntp, nowUs)) }
             }
         }
     }
@@ -101,27 +182,20 @@ class RtspServer(private val port: Int = 8554) {
         }
     }
 
-    private inner class Client(val socket: Socket) {
-        val out: OutputStream = socket.getOutputStream()
+    private inner class Client(val socket: Socket, val out: OutputStream) {
         val queue = LinkedBlockingQueue<ByteArray>(QUEUE_CAPACITY)
-        val ssrc: Int = random.nextInt()
         var sessionId: String = ""
-        var rtpChannel = 0
 
+        @Volatile var video: H264Packetizer? = null
+        @Volatile var audio: AacPacketizer? = null
         @Volatile var playing = false
         @Volatile var waitingForKey = true
         @Volatile private var closed = false
         private var writer: Thread? = null
 
         val isClosed: Boolean get() = closed
-        lateinit var packetizer: RtpPacketizer
 
-        fun setup(channel: Int) {
-            rtpChannel = channel
-            packetizer = RtpPacketizer(ssrc, random.nextInt(), channel)
-        }
-
-        /** Écriture atomique : réponses RTSP et paquets RTP ne se mélangent jamais. */
+        /** Écriture atomique : réponses RTSP et paquets RTP/RTCP ne se mélangent jamais. */
         fun write(bytes: ByteArray) {
             synchronized(out) {
                 out.write(bytes)
@@ -136,6 +210,7 @@ class RtspServer(private val port: Int = 8554) {
                     while (!closed) {
                         val pkt = queue.poll(1, TimeUnit.SECONDS) ?: continue
                         write(pkt)
+                        CastStats.bytesSent.addAndGet(pkt.size.toLong())
                     }
                 } catch (_: IOException) {
                 } catch (_: InterruptedException) {
@@ -152,18 +227,56 @@ class RtspServer(private val port: Int = 8554) {
             runCatching { socket.close() }
             writer?.interrupt()
             clients.remove(this)
+            CastStats.clients = clients.count { it.playing }
         }
     }
 
     private class Request(val method: String, val url: String, val headers: Map<String, String>)
 
+    /** Ouvre les flux du client : chiffrés + authentifiés par PIN si activé, sinon directs (mode ouvert). */
+    private fun openStreams(socket: Socket): Pair<InputStream, OutputStream> {
+        socket.tcpNoDelay = true
+        socket.soTimeout = 90_000 // un lecteur actif envoie un keep-alive bien avant
+        val currentPin = pin ?: return Pair(socket.getInputStream(), socket.getOutputStream())
+        if (!handshakeSlots.tryAcquire()) { // trop de tentatives simultanées : refus sans calcul
+            runCatching { socket.close() }
+            throw IOException("trop de connexions simultanées")
+        }
+        try {
+            val channel = SecureChannel.serverHandshake(socket, currentPin)
+            guard.recordSuccess()
+            return Pair(channel.inputStream, channel.outputStream)
+        } catch (e: HandshakeException) {
+            if (e.reason == HandshakeException.BAD_PROOF) onBadPin()
+            throw e
+        } finally {
+            handshakeSlots.release()
+        }
+    }
+
+    /** Après MAX_PIN_FAILURES échecs d'affilée, un NOUVEAU code est généré : les essais précédents deviennent inutiles. */
+    private fun onBadPin() {
+        CastStats.authFailures.incrementAndGet()
+        if (guard.recordFailure()) {
+            val fresh = PinGuard.newPin()
+            pin = fresh
+            CastStats.pin = fresh
+            onPinChanged?.invoke(fresh)
+        }
+    }
+
     private fun handleClient(socket: Socket) {
-        val client = Client(socket)
+        val streams = try {
+            openStreams(socket)
+        } catch (e: IOException) {
+            Log.d(TAG, "Connexion refusée : ${e.message}")
+            runCatching { socket.close() }
+            return
+        }
+        val client = Client(socket, streams.second)
         clients.add(client)
         try {
-            socket.tcpNoDelay = true
-            socket.soTimeout = 90_000 // un lecteur actif envoie un keep-alive bien avant
-            val input = PushbackInputStream(BufferedInputStream(socket.getInputStream()), 1)
+            val input = PushbackInputStream(BufferedInputStream(streams.first), 1)
             while (running && !client.isClosed) {
                 val req = readRequest(input) ?: break
                 val cseq = req.headers["cseq"] ?: "0"
@@ -200,10 +313,11 @@ class RtspServer(private val port: Int = 8554) {
         if (c.sessionId.isNotEmpty()) listOf("Session: ${c.sessionId};timeout=60") else emptyList()
 
     private fun onDescribe(c: Client, cseq: String) {
-        if (!awaitParameterSets(5000)) {
+        if (!awaitVideoConfig(5000)) {
             reply(c, cseq, 503)
             return
         }
+        val asc = if (audioExpected && awaitAudioConfig(3000)) audioConfig else null
         val s = sps!!
         val p = pps!!
         val host = c.socket.localAddress?.hostAddress ?: "0.0.0.0"
@@ -219,13 +333,23 @@ class RtspServer(private val port: Int = 8554) {
             append("s=ViewCast\r\n")
             append("c=IN IP4 0.0.0.0\r\n")
             append("t=0 0\r\n")
-            append("m=video 0 RTP/AVP ${RtpPacketizer.PAYLOAD_TYPE}\r\n")
-            append("a=rtpmap:${RtpPacketizer.PAYLOAD_TYPE} H264/90000\r\n")
+            append("m=video 0 RTP/AVP $VIDEO_PAYLOAD_TYPE\r\n")
+            append("a=rtpmap:$VIDEO_PAYLOAD_TYPE H264/90000\r\n")
             append(
-                "a=fmtp:${RtpPacketizer.PAYLOAD_TYPE} packetization-mode=1;" +
+                "a=fmtp:$VIDEO_PAYLOAD_TYPE packetization-mode=1;" +
                     "profile-level-id=$profileLevelId;sprop-parameter-sets=$spsB64,$ppsB64\r\n"
             )
             append("a=control:streamid=0\r\n")
+            if (asc != null) {
+                val config = asc.joinToString("") { String.format("%02x", it.toInt() and 0xFF) }
+                append("m=audio 0 RTP/AVP $AUDIO_PAYLOAD_TYPE\r\n")
+                append("a=rtpmap:$AUDIO_PAYLOAD_TYPE MPEG4-GENERIC/$audioSampleRate/$audioChannels\r\n")
+                append(
+                    "a=fmtp:$AUDIO_PAYLOAD_TYPE streamtype=5;profile-level-id=1;mode=AAC-hbr;" +
+                        "sizelength=13;indexlength=3;indexdeltalength=3;config=$config\r\n"
+                )
+                append("a=control:streamid=1\r\n")
+            }
         }
         reply(
             c, cseq, 200,
@@ -240,22 +364,34 @@ class RtspServer(private val port: Int = 8554) {
             reply(c, cseq, 461) // UDP non supporté : le lecteur doit réessayer en TCP
             return
         }
+        val isAudio = req.url.endsWith("streamid=1")
+        if (isAudio && audioConfig == null) {
+            reply(c, cseq, 404)
+            return
+        }
         val m = Regex("interleaved=(\\d+)-(\\d+)").find(transport)
-        val rtp = m?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val defaultRtp = if (isAudio) 2 else 0
+        val rtp = m?.groupValues?.get(1)?.toIntOrNull() ?: defaultRtp
         val rtcp = m?.groupValues?.get(2)?.toIntOrNull() ?: (rtp + 1)
-        c.setup(rtp)
+        val ssrc = random.nextInt()
+        val tsOffset = random.nextInt().toLong() and 0xFFFFFFFFL
+        if (isAudio) {
+            c.audio = AacPacketizer(ssrc, random.nextInt(), rtp, audioSampleRate, tsOffset)
+        } else {
+            c.video = H264Packetizer(ssrc, random.nextInt(), rtp, tsOffset)
+        }
         if (c.sessionId.isEmpty()) c.sessionId = (random.nextInt() ushr 1).toString(16).padStart(8, '0')
         reply(
             c, cseq, 200,
             listOf(
-                "Transport: RTP/AVP/TCP;unicast;interleaved=$rtp-$rtcp;ssrc=${String.format("%08X", c.ssrc)}",
+                "Transport: RTP/AVP/TCP;unicast;interleaved=$rtp-$rtcp;ssrc=${String.format("%08X", ssrc)}",
                 "Session: ${c.sessionId};timeout=60"
             )
         )
     }
 
     private fun onPlay(c: Client, cseq: String) {
-        if (c.sessionId.isEmpty()) {
+        if (c.sessionId.isEmpty() || (c.video == null && c.audio == null)) {
             reply(c, cseq, 454)
             return
         }
@@ -263,12 +399,17 @@ class RtspServer(private val port: Int = 8554) {
         reply(c, cseq, 200, listOf("Range: npt=0.000-") + sessionHeaders(c))
         c.startWriter()
         c.playing = true
+        CastStats.clients = clients.count { it.playing }
         onKeyFrameRequested?.invoke() // le client doit recevoir un IDR au plus vite
     }
 
-    private fun awaitParameterSets(timeoutMs: Long): Boolean {
+    private fun awaitVideoConfig(timeoutMs: Long): Boolean = waitFor(timeoutMs) { sps != null && pps != null }
+
+    private fun awaitAudioConfig(timeoutMs: Long): Boolean = waitFor(timeoutMs) { audioConfig != null || !audioExpected }
+
+    private fun waitFor(timeoutMs: Long, condition: () -> Boolean): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
-        while (sps == null || pps == null) {
+        while (!condition()) {
             if (System.currentTimeMillis() > deadline || !running) return false
             try {
                 Thread.sleep(50)
@@ -282,6 +423,7 @@ class RtspServer(private val port: Int = 8554) {
     private fun reply(c: Client, cseq: String, code: Int, headers: List<String> = emptyList(), body: String? = null) {
         val text = when (code) {
             200 -> "OK"
+            404 -> "Not Found"
             405 -> "Method Not Allowed"
             454 -> "Session Not Found"
             461 -> "Unsupported Transport"
@@ -360,6 +502,8 @@ class RtspServer(private val port: Int = 8554) {
 
     private companion object {
         const val TAG = "ViewCast"
-        const val QUEUE_CAPACITY = 600 // ~800 Ko : assez pour une image clé + quelques images
+        const val MAX_PIN_FAILURES = 5
+        const val MAX_PARALLEL_HANDSHAKES = 2
+        const val QUEUE_CAPACITY = 800 // ~1 Mo : une image clé + quelques images + l'audio
     }
 }

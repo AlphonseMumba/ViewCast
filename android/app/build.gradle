@@ -3,6 +3,12 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// Signature « release » : créez android/keystore.properties (jamais commité) avec
+//   storeFile=../viewcast-release.jks / storePassword=... / keyAlias=... / keyPassword=...
+def keystoreFile = rootProject.file("keystore.properties")
+def keystoreProps = new Properties()
+if (keystoreFile.exists()) keystoreFile.withInputStream { keystoreProps.load(it) }
+
 android {
     namespace 'com.example.viewcast'
     compileSdk 34
@@ -11,8 +17,27 @@ android {
         applicationId "com.example.viewcast"
         minSdk 24
         targetSdk 34
-        versionCode 2
-        versionName "1.1"
+        versionCode 4
+        versionName "1.3.0"
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreFile.exists()) {
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Sans keystore.properties, la release est signée avec la clé de debug (installable pour tester, pas pour publier).
+            signingConfig keystoreFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
     }
 
     buildFeatures {
@@ -50,6 +75,9 @@ dependencies {
     implementation "androidx.compose.ui:ui:1.6.8"
     implementation "androidx.compose.foundation:foundation:1.6.8"
     implementation "androidx.compose.material3:material3:1.2.1"
+    implementation "androidx.compose.material:material-icons-extended:1.6.8"
     implementation "androidx.compose.ui:ui-tooling-preview:1.6.8"
     implementation "androidx.activity:activity-compose:1.9.2"
+
+    testImplementation "junit:junit:4.13.2"
 }

@@ -1,0 +1,24 @@
+Terms of Use — ViewCast
+
+Last updated: October 9, 2026
+
+1. Acceptance
+By installing or using ViewCast you accept these terms and the privacy policy.
+
+2. Permitted use
+Cast only your own devices and content, or with the consent of the people concerned. Comply with privacy, copyright and content-protection laws (do not try to bypass a protection). Do not use ViewCast to monitor a person without their knowledge.
+
+3. Your responsibility
+You are responsible for what appears on screen during casting and for the network you use (see the Network and security section of the privacy policy).
+
+4. No warranty
+ViewCast is provided "as is", without warranty of any kind, including availability, compatibility with all devices or fitness for a particular purpose. Some apps forbid capturing their sound or image.
+
+5. Limitation of liability
+To the extent permitted by law, Alphonse MUMBA is not liable for indirect damages or data loss related to the use of ViewCast.
+
+6. Intellectual property
+ViewCast is the property of Alphonse MUMBA. © 2026 Alphonse MUMBA. The code is published under the MIT license (LICENCE file); the ViewCast name and logo remain the author's property.
+
+7. Contact
+Alphonse MUMBA — mumbalpha@gmail.com

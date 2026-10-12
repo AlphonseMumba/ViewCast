@@ -2,69 +2,65 @@ package com.example.viewcast
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.net.wifi.p2p.WifiP2pDevice
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.viewcast.net.NetUtils
 import com.example.viewcast.rtsp.ScreenCastService
+import com.example.viewcast.ui.Actions
+import com.example.viewcast.ui.AppState
+import com.example.viewcast.ui.ViewCastApp
 import com.example.viewcast.wifi.WiFiDirectHelper
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), Actions {
 
+    private lateinit var prefs: Prefs
+    private lateinit var state: AppState
     private lateinit var wifi: WiFiDirectHelper
-    private val peers = mutableStateListOf<WifiP2pDevice>()
 
-    private var status by mutableStateOf("Prêt")
-    private var url by mutableStateOf("")
-    private var casting by mutableStateOf(false)
+    private val wifiPermission: String
+        get() = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES
+        else Manifest.permission.ACCESS_FINE_LOCATION
 
-    private var quality by mutableStateOf("720p")
-    private var bitrateMbps by mutableStateOf(4f)
-    private var fps by mutableStateOf(30f)
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
 
-    private val permissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+    // Les notifications (Android 13+) ne sont demandées qu'au lancement ; les autres permissions, au moment du besoin.
+    private val notificationLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    private val wifiPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) discoverPeers()
+        }
+
+    private val audioPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                state.updateAudio(false)
+                Toast.makeText(this, R.string.audio_denied, Toast.LENGTH_LONG).show()
+            }
+            launchProjection()
+        }
 
     private val projectionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
@@ -76,151 +72,158 @@ class MainActivity : ComponentActivity() {
                     putExtra(ScreenCastService.EXTRA_DATA, data)
                     putExtra(ScreenCastService.EXTRA_WIDTH, w)
                     putExtra(ScreenCastService.EXTRA_HEIGHT, h)
-                    putExtra(ScreenCastService.EXTRA_BITRATE, (bitrateMbps * 1_000_000).toInt())
-                    putExtra(ScreenCastService.EXTRA_FPS, fps.toInt())
+                    putExtra(ScreenCastService.EXTRA_BITRATE, state.bitrateMbps * 1_000_000)
+                    putExtra(ScreenCastService.EXTRA_FPS, state.fps)
+                    putExtra(ScreenCastService.EXTRA_LOW_LATENCY, state.lowLatency)
+                    putExtra(ScreenCastService.EXTRA_AUDIO, state.audioEnabled)
+                    putExtra(ScreenCastService.EXTRA_SECURE, state.secure)
                 }
                 if (Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
-                casting = true
-                url = streamUrl()
-                status = "Diffusion en cours (${w}x$h)"
+                state.casting = true
+                state.tab = 2
             } else {
-                Toast.makeText(this, "Autorisation de capture refusée", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, R.string.capture_denied, Toast.LENGTH_SHORT).show()
             }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        prefs = Prefs(this)
+        state = AppState(prefs)
+        state.ips = NetUtils.localIpv4Addresses()
+        state.casting = CastStats.running
 
         wifi = WiFiDirectHelper(this)
         wifi.register()
-        requestRuntimePermissions()
-        url = streamUrl()
+
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
 
         lifecycleScope.launch {
             wifi.events.collect { e ->
                 when (e) {
-                    is WiFiDirectHelper.Event.P2pEnabled -> status = "Wi‑Fi Direct activé"
+                    is WiFiDirectHelper.Event.P2pEnabled -> state.p2pStatus = getString(R.string.p2p_enabled)
                     is WiFiDirectHelper.Event.Peers -> {
-                        peers.clear()
-                        peers.addAll(e.list)
-                        status = "Appareils trouvés : ${peers.size}"
+                        state.peers.clear()
+                        state.peers.addAll(e.list)
+                        state.searching = false
                     }
                     is WiFiDirectHelper.Event.Connected -> {
-                        status = "Connecté en Wi‑Fi Direct"
+                        state.p2pStatus = getString(R.string.p2p_connected)
                         // Si le téléphone est Group Owner, son IP est celle du groupe ; sinon c'est son IP locale.
-                        val ip = if (e.info.isGroupOwner) e.info.groupOwnerAddress?.hostAddress else null
-                        url = streamUrl(ip)
+                        if (e.info.isGroupOwner) state.chosenIp = e.info.groupOwnerAddress?.hostAddress
                     }
-                    is WiFiDirectHelper.Event.Disconnected -> status = "Wi‑Fi Direct déconnecté"
-                    is WiFiDirectHelper.Event.Error -> status = "Erreur : ${e.msg}"
+                    is WiFiDirectHelper.Event.Disconnected -> state.p2pStatus = getString(R.string.p2p_disconnected)
+                    is WiFiDirectHelper.Event.Error -> {
+                        state.searching = false
+                        state.p2pStatus = getString(R.string.p2p_error, e.msg)
+                    }
                 }
             }
         }
 
-        setContent { ViewCastApp() }
+        // Rafraîchit chaque seconde l'état de la diffusion (service), les mesures et les adresses réseau.
+        lifecycleScope.launch {
+            var lastBytes = 0L
+            var lastFrames = 0L
+            var lastT = SystemClock.elapsedRealtime()
+            while (true) {
+                val now = SystemClock.elapsedRealtime()
+                val dt = ((now - lastT) / 1000f).coerceAtLeast(0.1f)
+                lastT = now
+                state.casting = CastStats.running
+                if (state.casting) {
+                    val b = CastStats.bytesSent.get()
+                    val f = CastStats.framesEncoded.get()
+                    state.mbps = ((b - lastBytes) * 8f / 1_000_000f / dt).coerceAtLeast(0f)
+                    state.measuredFps = ((f - lastFrames) / dt).roundToInt().coerceAtLeast(0)
+                    lastBytes = b
+                    lastFrames = f
+                    state.clients = CastStats.clients
+                    state.castWidth = CastStats.width
+                    state.castHeight = CastStats.height
+                    state.audioActive = CastStats.audioActive
+                    state.audioMuted = CastStats.audioMuted
+                    val pin = CastStats.pin
+                    if (state.pin.isNotEmpty() && pin.isNotEmpty() && pin != state.pin) {
+                        Toast.makeText(this@MainActivity, R.string.sec_rotated, Toast.LENGTH_LONG).show()
+                    }
+                    state.pin = pin
+                } else {
+                    state.pin = ""
+                    lastBytes = 0L
+                    lastFrames = 0L
+                    state.mbps = 0f
+                    state.measuredFps = 0
+                    state.clients = 0
+                }
+                state.ips = NetUtils.localIpv4Addresses()
+                delay(1000)
+            }
+        }
+
+        setContent { ViewCastApp(state, this@MainActivity) }
     }
 
-    @OptIn(ExperimentalMaterial3Api::class)
-    @Composable
-    fun ViewCastApp() {
-        MaterialTheme {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(text = status, style = MaterialTheme.typography.headlineSmall)
+    // ───────── Actions de l'interface ─────────
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Qualité :")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    var expanded by remember { mutableStateOf(false) }
-                    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-                        TextField(
-                            value = quality,
-                            onValueChange = {},
-                            readOnly = true,
-                            enabled = !casting,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                            modifier = Modifier.menuAnchor()
-                        )
-                        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            listOf("480p", "720p", "1080p").forEach { q ->
-                                DropdownMenuItem(text = { Text(q) }, onClick = {
-                                    quality = q
-                                    expanded = false
-                                })
-                            }
-                        }
-                    }
-                }
+    override fun startCast() {
+        val needAudioPermission = state.audioEnabled && Build.VERSION.SDK_INT >= 29 &&
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+        if (needAudioPermission) audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        else launchProjection()
+    }
 
-                Text("Débit : ${bitrateMbps.roundToInt()} Mbit/s")
-                Slider(
-                    value = bitrateMbps,
-                    onValueChange = { bitrateMbps = it },
-                    valueRange = 2f..10f,
-                    steps = 7,
-                    enabled = !casting,
-                    modifier = Modifier.fillMaxWidth()
-                )
+    private fun launchProjection() {
+        val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        projectionLauncher.launch(mpm.createScreenCaptureIntent())
+    }
 
-                Text("Images/s : ${fps.toInt()}")
-                Slider(
-                    value = fps,
-                    onValueChange = { fps = it },
-                    valueRange = 15f..60f,
-                    steps = 8,
-                    enabled = !casting,
-                    modifier = Modifier.fillMaxWidth()
-                )
+    override fun stopCast() {
+        stopService(Intent(this, ScreenCastService::class.java))
+        state.casting = false
+        Toast.makeText(this, R.string.cast_stopped, Toast.LENGTH_SHORT).show()
+    }
 
-                Button(
-                    onClick = {
-                        if (casting) {
-                            stopService(Intent(this@MainActivity, ScreenCastService::class.java))
-                            casting = false
-                            status = "Diffusion arrêtée"
-                        } else {
-                            val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                            projectionLauncher.launch(mpm.createScreenCaptureIntent())
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(if (casting) "Arrêter la diffusion" else "Démarrer la diffusion (RTSP)")
-                }
+    override fun copyAddress() {
+        val address = state.address ?: return
+        val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("ViewCast", address))
+        Toast.makeText(this, R.string.address_copied, Toast.LENGTH_SHORT).show()
+    }
 
-                Text("Adresse à saisir dans le viewer :", style = MaterialTheme.typography.labelLarge)
-                Text(text = url, style = MaterialTheme.typography.titleMedium)
+    override fun discoverPeers() {
+        if (wifi.hasPerm()) {
+            state.searching = true
+            state.p2pStatus = getString(R.string.p2p_searching)
+            wifi.discoverPeers()
+        } else {
+            wifiPermissionLauncher.launch(wifiPermission)
+        }
+    }
 
-                Button(onClick = {
-                    wifi.discoverPeers()
-                    status = "Recherche d'appareils…"
-                }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Wi‑Fi Direct : chercher des appareils")
-                }
+    override fun connectPeer(device: WifiP2pDevice) = wifi.connect(device)
 
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(peers) { peer ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(4.dp)
-                                .clickable {
-                                    status = "Connexion à ${peer.deviceName.ifEmpty { peer.deviceAddress }}…"
-                                    wifi.connect(peer)
-                                }
-                        ) {
-                            Text(
-                                text = peer.deviceName.ifEmpty { peer.deviceAddress },
-                                modifier = Modifier.padding(16.dp)
-                            )
-                        }
-                    }
-                }
-            }
+    override fun setLanguage(code: String) {
+        if (code == state.language) return
+        prefs.language = code
+        state.language = code
+        recreate() // recharge toutes les chaînes dans la nouvelle langue
+    }
+
+    override fun toggleSound() {
+        CastStats.audioMuted = !CastStats.audioMuted
+        state.audioMuted = CastStats.audioMuted
+    }
+
+    override fun sendMail() {
+        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:mumbalpha@gmail.com"))
+            .putExtra(Intent.EXTRA_SUBJECT, "ViewCast")
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(this, "mumbalpha@gmail.com", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -230,7 +233,7 @@ class MainActivity : ComponentActivity() {
         val landscape = dm.widthPixels > dm.heightPixels
         val shortSide = minOf(dm.widthPixels, dm.heightPixels).toFloat()
         val longSide = maxOf(dm.widthPixels, dm.heightPixels).toFloat()
-        val target = when (quality) {
+        val target = when (state.quality) {
             "480p" -> 480f
             "1080p" -> 1080f
             else -> 720f
@@ -242,26 +245,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun even(v: Float): Int = (v.roundToInt() / 2) * 2
-
-    private fun streamUrl(ipOverride: String? = null): String {
-        val ip = ipOverride ?: NetUtils.bestLocalIp()
-        return if (ip != null) "rtsp://$ip:${ScreenCastService.PORT}/stream"
-        else "Aucun réseau détecté : activez le Wi‑Fi ou le point d'accès"
-    }
-
-    private fun requestRuntimePermissions() {
-        val perms = mutableListOf<String>()
-        if (Build.VERSION.SDK_INT >= 33) {
-            perms += Manifest.permission.NEARBY_WIFI_DEVICES
-            perms += Manifest.permission.POST_NOTIFICATIONS
-        } else {
-            perms += Manifest.permission.ACCESS_FINE_LOCATION
-        }
-        val missing = perms.filter {
-            ActivityCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-        }
-        if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray())
-    }
 
     override fun onDestroy() {
         super.onDestroy()

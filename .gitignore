@@ -38,3 +38,8 @@ security/certs/*
 # IDE
 .idea/
 *.iml
+
+# Secrets de signature
+keystore.properties
+*.jks
+*.keystore
