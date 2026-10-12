@@ -1,112 +1,221 @@
 # ViewCast
 
-Diffusez l’écran de votre smartphone vers un ordinateur portable en réseau local, même hors connexion:
-- Android: Wi‑Fi Direct (ou point d’accès), capture d’écran (MediaProjection), encodage H.264, diffusion RTSP.
-- iOS: ReplayKit + H.264 + serveur RTSP (utilise Hotspot/AP local, iOS ne propose pas Wi‑Fi Direct).
-- Desktop (Windows/macOS/Linux): application "Viewer" simple basée sur OpenCV/FFmpeg.
+**Diffusez l'écran et le son de votre téléphone Android sur votre PC Windows, sans câble, sur votre réseau local.**
 
-⚠️ ViewCast inclut un serveur RTSP minimal pour démonstration. Pour un usage en production, utilisez une pile RTSP/RTP complète (live555, GStreamer) ou WebRTC.
+🇫🇷 Français (ce document) · 🇬🇧 [English](README.en.md) · [Confidentialité / Privacy](PRIVACY.md) · [Conditions / Terms](TERMS.md)
 
-## Sommaire
-- Fonctionnement
-- Téléchargements
-- Démarrage rapide (non initiés)
-- Plateformes
-- Réseau hors connexion
-- Sécurité
-- Builds automatiques (CI)
-- Développeurs
-- Licence
+© 2026 **Alphonse MUMBA** — tous droits sur le nom, le logo et l'interface réservés ; code publié sous licence MIT (voir [LICENCE](LICENCE)). Contact : **mumbalpha@gmail.com**
 
 ---
 
-## Fonctionnement
+## 1. Ce que fait ViewCast
 
-1. Le téléphone encode l’écran en vidéo H.264 (matériel).
-2. Il expose un serveur RTSP sur le port 8554.
-3. Le viewer (ordinateur) se connecte à l’URL `rtsp://<IP_DU_TÉLÉPHONE>:8554/stream` et affiche la vidéo.
+| Côté | Application | Rôle |
+|---|---|---|
+| Téléphone | **ViewCast** (Android 7.0+, son : Android 10+) | Capture l'écran et le son interne, les encode (H.264 + AAC) et les diffuse |
+| PC | **ViewCast Viewer** (Windows 10/11) | Se connecte au téléphone, affiche l'image et joue le son |
 
-## Téléchargements
+Le téléphone fait office de **serveur** (RTSP, port TCP 8554) : c'est le **PC qui se connecte au téléphone** en saisissant son adresse. Rien ne passe par Internet ni par un serveur de l'éditeur.
 
-Rendez-vous dans l’onglet "Releases" de GitHub:
-- Android: app-debug.apk ([installation directe](https://github.com/AlphonseMumba/ViewCast/releases/download/v1.1.0/app-debug.apk)), app-release.aab (pour Play Store).
-- Windows: ViewCastViewer.exe https://github.com/AlphonseMumba/ViewCast/releases/download/v1.1.0/ViewCastViewer.exe .
-- macOS: binaire ViewCastViewer.
-- iOS: archive de build; pour installer sur iPhone, passez par TestFlight (voir plus bas).
+Langues : **français** (par défaut) et **anglais**, au choix dans les *Paramètres* des deux applications.
 
-## Démarrage rapide (non initiés)
+---
 
-1) Mettre les appareils sur le même réseau local:
-- Android: laissez ViewCast créer/joindre un groupe Wi‑Fi Direct, ou activez le "Point d’accès" du téléphone et connectez l’ordinateur dessus.
-- iOS: activez le "Partage de connexion" (Hotspot) sur l’iPhone et connectez l’ordinateur.
+## 2. Utiliser ViewCast
 
-2) Sur le téléphone:
-- Android:
-  - Ouvrez ViewCast.
-  - Appuyez sur "Découvrir appareils" (Wi‑Fi Direct), puis connectez-vous au PC si compatible; sinon, utilisez le point d’accès.
-  - Appuyez sur "Démarrer diffusion" et acceptez la permission de capture d’écran.
-  - Notez l’IP indiquée (souvent 192.168.49.1 en Wi‑Fi Direct).
-- iOS:
-  - Ouvrez ViewCast, appuyez "Démarrer diffusion".
-  - Notez l’IP de l’iPhone dans les réglages Wi‑Fi (icône "i").
+### 2.1 Préparer le réseau (au choix)
 
-3) Sur l’ordinateur:
-- Windows/macOS:
-  - Lancez ViewCastViewer (depuis les Releases).
-  - Entrez l’adresse IP du téléphone quand on vous la demande.
-  - Vous devriez voir l’écran du téléphone.
+1. **Même Wi‑Fi** : téléphone et PC sur la même box/le même routeur (idéal en 5 GHz).
+2. **Point d'accès du téléphone** *(le plus fiable)* : activez le partage de connexion Wi‑Fi sur le téléphone, puis connectez le PC à ce réseau.
+3. **Wi‑Fi Direct** : onglet *Découverte* de l'app mobile (voir 2.4). Moins universel côté PC Windows.
 
-Astuce: si ça ne marche pas, essayez avec FFmpeg/ffplay:
+> 🔒 Par défaut, le flux est **chiffré (AES‑256) et protégé par un code PIN** à 6 chiffres (voir §2.6 et [docs/SECURITY.md](docs/SECURITY.md)). Utilisez malgré tout un réseau de confiance.
+
+### 2.2 Côté Android — diffuser
+
+1. Installez `ViewCast.apk` (autorisez « Installer des applications inconnues » pour votre navigateur ou gestionnaire de fichiers).
+2. Ouvrez **ViewCast**. Onglet **Connexion** : l'application affiche l'**adresse de diffusion**, par exemple `rtsp://192.168.43.1:8554/stream`. Touchez **Copier l'adresse** si besoin.
+3. (Facultatif) Onglet **Paramètres** : choisissez la résolution (480p/720p/1080p), les images par seconde (30/60), le débit, le mode *Faible latence* ou *Qualité visuelle*, et le **son interne** (activé par défaut). Ces réglages sont verrouillés pendant une diffusion.
+4. Touchez **Démarrer la diffusion**. Android demande :
+   - la permission **micro** (nécessaire à Android pour capturer le *son interne* ; le micro physique n'est pas utilisé) ;
+   - l'autorisation de **capture d'écran** → *Commencer maintenant*.
+5. Le **code PIN à 6 chiffres** s'affiche dans l'onglet *Connexion* (et est rappelé dans *Diffusion*) : notez‑le, il **change à chaque diffusion**. L'application passe sur l'onglet **Diffusion** : débit réel, définition, état du son, nombre de récepteurs connectés. Vous pouvez **couper le son** à tout moment, ou **Arrêter la diffusion** (une confirmation est demandée). Une notification permanente permet aussi d'arrêter.
+
+### 2.3 Côté Windows — recevoir
+
+1. Lancez **`ViewCastViewer.exe`** (ou, depuis les sources : `python viewcast_viewer.py`, voir §4).
+   *Au premier lancement, le pare-feu Windows peut demander une autorisation : acceptez pour les réseaux privés.*
+2. Sur l'écran **Réception**, saisissez l'adresse du téléphone — l'IP suffit (`192.168.43.1`), ou l'adresse complète `rtsp://192.168.43.1:8554/stream` — et le **code PIN** affiché sur le téléphone, puis **Se connecter** (touche Entrée). Le HUD affiche « Chiffré · AES‑256 » quand le canal sécurisé est actif.
+3. Dès que l'image arrive, le récepteur passe en **Diffusion** : l'écran du téléphone s'affiche avec un **HUD** (résolution, images/s, débit, codecs) et une **barre de commandes** :
+   Pause · Son (+ volume) · Format (Adapter / Étirer / Centrer 1:1) · Rotation · Plein écran · Arrêter.
+4. Le viewer se **reconnecte tout seul** si le flux est coupé.
+
+**Raccourcis clavier** : `F` plein écran · `M` muet · `Espace` pause · `Échap` quitter le plein écran, puis arrêter · double‑clic sur l'image = plein écran. En plein écran, les commandes se masquent après 2,5 s ; bougez la souris pour les revoir.
+
+**Onglet Paramètres (PC)** : plein écran automatique, toujours au premier plan, format d'affichage par défaut, tampon *Ultra‑faible / Équilibré / Stable*, volume, muet, **langue (Français / English)**, à propos, politique de confidentialité, conditions d'utilisation, dépannage. Les réglages sont enregistrés dans `%APPDATA%\ViewCast\settings.json`.
+
+### 2.4 Wi‑Fi Direct (facultatif)
+
+Dans l'onglet **Découverte** du téléphone, touchez **Actualiser** : les appareils Wi‑Fi Direct proches apparaissent ; touchez **Connecter** pour créer le groupe. Quand c'est fait, l'adresse affichée dans *Connexion* se met à jour (le téléphone est généralement `192.168.49.1`). Android demande alors la permission « Appareils Wi‑Fi à proximité » (ou la localisation avant Android 13) — uniquement pour cette recherche.
+
+### 2.5 Dépannage
+
+| Symptôme | Que faire |
+|---|---|
+| « Code PIN incorrect » | Relisez le code affiché sur le téléphone (6 chiffres). Le viewer ne réessaie pas tout seul : corrigez puis reconnectez‑vous. |
+| « Trop d'essais : un nouveau code a été généré » | Après 5 essais incorrects, le téléphone change de code : saisissez le nouveau. |
+| VLC / ffplay ne se connecte pas | Le flux chiffré n'est lisible que par le viewer ViewCast. Pour VLC/ffplay, désactivez **Protéger par code PIN** (*Paramètres ▸ Sécurité*) : *mode ouvert, sans protection*. |
+| « Impossible de joindre le téléphone » | Même réseau ? Diffusion démarrée ? Essayez le point d'accès du téléphone. Vérifiez l'IP saisie. Autorisez le pare-feu Windows. |
+| Écran noir puis rien | Attendez 2–3 s (première image clé). Si besoin : *Arrêter* puis reconnecter. |
+| Pas de son | Android 10+, permission micro accordée, option « Son interne » activée, volume Windows OK. Certaines applications (appels, streaming protégé) interdisent la capture de leur son. Le viewer affiche « Pas de son dans le flux ». |
+| Image saccadée | Baissez la résolution/le débit sur le téléphone, ou choisissez le tampon **Stable** sur le PC ; préférez le 5 GHz. |
+| Le son est décalé | Choisissez le tampon **Ultra‑faible** sur le PC. |
+| Le viewer ne démarre pas depuis les sources | `python -m pip install -r desktop/python/requirements.txt` (Python 3.10–3.12, 64 bits). |
+
+### 2.6 Sécurité : code PIN et chiffrement
+
+- **Activée par défaut** (*Paramètres ▸ Sécurité ▸ Protéger par code PIN*). Le téléphone génère un code à 6 chiffres à chaque diffusion ; le récepteur doit le saisir.
+- Le code **n'est jamais envoyé** sur le réseau (preuve cryptographique SRP‑6a) ni enregistré. Tout le flux — image, son, échanges — est **chiffré en AES‑256‑GCM** ; un paquet modifié ou rejoué est rejeté.
+- **5 essais incorrects ⇒ nouveau code** généré automatiquement (l'application vous le signale).
+- **Mode ouvert** (interrupteur désactivé) : RTSP en clair, compatible VLC/ffplay, mais **n'importe qui sur le réseau peut regarder**. À réserver aux tests.
+- Détails, protocole et limites : [docs/SECURITY.md](docs/SECURITY.md). Le protocole n'a pas été audité par un tiers.
+
+---
+
+## 3. Maquettes ↔ application (ce qui est fait, adapté ou reporté)
+
+Le design suit vos 8 maquettes (thème sombre « obsidienne », corail `#FF6B4A`, ambre, vert/cyan d'état).
+
+**Android (4 onglets)**
+
+| Maquette | Écran | Réalisé | Adapté / non réalisé |
+|---|---|---|---|
+| Connexion / Bienvenue | **Connexion** | statut réseau, carte d'accueil, 3 étapes, adresse + copier, démarrer/arrêter | la saisie de « l'IP du PC » devient « l'adresse du téléphone à saisir sur le PC » (le PC se connecte au téléphone) ; une carte **Code PIN** s'ajoute à l'écran ; QR code et sonde mDNS **non implémentés** (prévus, voir §7) ; chiffrement réalisé par PIN + AES‑256‑GCM (voir `docs/SECURITY.md`) |
+| Découverte des appareils | **Découverte** | recherche et connexion Wi‑Fi Direct réelles, statuts des appareils, saisie manuelle | mDNS, code PIN, latence par appareil non implémentés |
+| Diffusion en direct | **Diffusion** | « En direct · 720p @ 30 FPS », récepteurs connectés, débit réel, définition, audio, couper le son, confirmation d'arrêt | pause, plein écran, pointeur, batterie/thermique non applicables |
+| Paramètres du flux | **Paramètres** | résolution, fps, débit, mode d'optimisation, audio, **sécurité (interrupteur code PIN)**, **langue FR/EN**, à propos (version, © auteur, contact, confidentialité, conditions, FAQ) | micro de commentaires, masquer les notifications, connexion auto, test de bande passante, « licence Pro » : hors périmètre |
+
+**Windows (4 écrans)**
+
+| Maquette | Écran | Réalisé | Adapté / non réalisé |
+|---|---|---|---|
+| Écran d'attente / appairage | **Réception** | état, saisie d'adresse et de code PIN, étapes, raccourcis | QR code non implémenté (le PC saisit l'adresse et le code) |
+| Diffusion active + HUD | **Diffusion** | HUD résolution/fps/débit/codecs, barre de commandes, pause, volume, format, rotation | badge « Chiffré · AES‑256 » dans le HUD ; ping, batterie/température non applicables |
+| Panneau des paramètres | **Paramètres** | plein écran auto, premier plan, format, tampon, volume, langue | décodage GPU/CPU, port d'écoute, choix WebRTC : non applicables à l'architecture actuelle |
+| Plein écran immersion | **Plein écran** | commandes auto‑masquées, indications `Échap`/`F` | — |
+
+> Polices : les maquettes utilisent Roboto Flex / Inter / JetBrains Mono ; l'app utilise la police système (Roboto sur Android, Segoe UI/Consolas sur Windows) pour ne rien embarquer.
+
+---
+
+## 4. Construire le projet (build)
+
+### 4.1 Android — `ViewCast.apk`
+
+**Prérequis** : JDK 17, Android SDK (plateforme 34 + build‑tools) — le plus simple : **Android Studio** (Hedgehog ou plus récent).
+
+*Avec Android Studio* : *File ▸ Open* → dossier `android/` → attendre la synchronisation Gradle → *Run ▸ Run 'app'* sur un téléphone en mode débogage USB.
+
+*En ligne de commande* (dans `android/`) :
 
 ```bash
-# Remplacez <IP_DU_TÉLÉPHONE> par l'adresse IP de votre téléphone
-ffplay -rtsp_transport tcp rtsp://<IP_DU_TÉLÉPHONE>:8554/stream
+# Windows : gradlew.bat ... — Linux/macOS : ./gradlew ...
+./gradlew assembleDebug      # APK de test  → app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease    # APK release  → app/build/outputs/apk/release/app-release.apk
 ```
 
-## Plateformes
+**Signer l'APK de publication** (une seule fois) :
 
-- Android: 8.0 (API 26) ou supérieur, ARM64.
-- iOS: iOS 11.0 ou supérieur, ARM64.
-- Windows: 10 ou supérieur, x64.
-- macOS: 10.13 (High Sierra) ou supérieur, x64.
+```bash
+keytool -genkey -v -keystore viewcast-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias viewcast
+```
 
-## Réseau hors connexion
+Puis créez `android/keystore.properties` (déjà ignoré par Git — **ne le commitez jamais**) :
 
-### Android
+```properties
+storeFile=../viewcast-release.jks
+storePassword=VOTRE_MOT_DE_PASSE
+keyAlias=viewcast
+keyPassword=VOTRE_MOT_DE_PASSE
+```
 
-1. Activez le Wi‑Fi Direct sur le téléphone.
-2. Connectez l’ordinateur au réseau Wi‑Fi Direct du téléphone.
-3. Ouvrez ViewCast sur le téléphone et démarrez la diffusion.
-4. Sur l’ordinateur, utilisez l’URL `rtsp://<IP_DU_TÉLÉPHONE>:8554/stream` dans le viewer.
+Relancez `./gradlew assembleRelease`. ⚠️ **Sauvegardez le `.jks`** : sans lui, vous ne pourrez plus publier de mises à jour installables par‑dessus l'ancienne version. (Sans `keystore.properties`, la release est signée avec la clé de debug : utile pour tester seulement.)
 
-### iOS
+### 4.2 Windows — `ViewCastViewer.exe`
 
-1. Activez le "Partage de connexion" sur l’iPhone.
-2. Connectez l’ordinateur au réseau Hotspot de l’iPhone.
-3. Ouvrez ViewCast sur l’iPhone et démarrez la diffusion.
-4. Sur l’ordinateur, utilisez l’URL `rtsp://<IP_DU_TÉLÉPHONE>:8554/stream` dans le viewer.
+**Prérequis** : Windows 10/11, **Python 3.10–3.12 (64 bits)** avec Tkinter (inclus par défaut ; cochez « Add Python to PATH »).
 
-## Sécurité
+*Lancer depuis les sources* :
 
-- Changez le mot de passe par défaut du Wi‑Fi Direct sur Android.
-- Utilisez un mot de passe fort pour le Hotspot sur iOS.
-- Ne partagez pas l’URL RTSP publiquement.
+```bat
+cd desktop\python
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install -r requirements.txt
+python viewcast_viewer.py               :: ou : python viewcast_viewer.py 192.168.43.1
+```
 
-## Builds automatiques (CI)
+*Fabriquer l'exécutable* (fichier unique, sans console) :
 
-[![Android CI](https://github.com/<user>/<repo>/actions/workflows/android.yml/badge.svg)](github/workflows/android.yml)
-[![iOS CI](https://github.com/<user>/<repo>/actions/workflows/ios.yml/badge.svg)](github/workflows/ios.yml)
-[![Desktop CI](https://github.com/<user>/<repo>/actions/workflows/desktop.yml/badge.svg)](github/workflows/desktop.yml)
+```bat
+desktop\python\build_windows.bat        :: résultat : desktop\python\dist\ViewCastViewer.exe
+desktop\windows\build.bat               :: idem, copié dans desktop\windows\dist\
+```
 
-## Développeurs
+L'exécutable embarque FFmpeg (PyAV), PortAudio et l'icône ; il pèse plusieurs dizaines de Mo. Windows SmartScreen peut afficher « éditeur inconnu » tant que l'exécutable n'est pas signé numériquement : *Informations complémentaires ▸ Exécuter quand même*.
 
-Pour contribuer:
-1. Fork ce dépôt.
-2. Créez une branche pour votre fonctionnalité (`git checkout -b ma-fonctionnalité`).
-3. Commitez vos changements (`git commit -m 'Ajoute une fonctionnalité'`).
-4. Poussez vers votre fork (`git push origin ma-fonctionnalité`).
-5. Ouvrez une Pull Request.
+### 4.3 Tester sans téléphone
 
-## Licence
+```bash
+python tools/test_viewer_logic.py          # 63 tests de la logique du viewer (aucun écran requis)
+python tools/test_secure_protocol.py       # 17 tests du canal chiffré, dont Python <-> Java (vrai code Android)
+python tools/test_e2e_secure.py            # 14 tests de bout en bout : chiffrement, mauvais PIN, espion réseau (ffmpeg requis)
+(cd android && ./gradlew test)             # mêmes vecteurs cryptographiques côté Android (JUnit)
 
-Voir [security/LICENCE](security/LICENCE).
+python tools/fake_phone_server.py --pin 482913     # faux téléphone chiffré : mire + son 440 Hz (ffmpeg requis)
+python desktop/python/viewcast_viewer.py 127.0.0.1:8554    # puis saisir le code PIN 482913 dans la fenêtre
+```
+
+### 4.4 Publier une version (GitHub Releases)
+
+1. Fusionnez la branche dans `main`, puis `git tag v1.3.0 && git push origin v1.3.0`.
+2. Sur GitHub : *Releases ▸ Draft a new release* → choisissez le tag → joignez `ViewCast.apk` et `ViewCastViewer.exe` → *Publish release*.
+3. Ajoutez le lien `https://github.com/AlphonseMumba/ViewCast/releases/latest` à vos pages de présentation.
+
+---
+
+## 5. Organisation du dépôt
+
+```
+android/            application Android (Kotlin, Jetpack Compose)
+  .../ui/           thème, composants, 4 écrans, état
+  .../rtsp/         serveur RTSP/RTP, service de diffusion
+  .../capture/      capture d'écran + encodage H.264, capture du son + AAC
+  .../security/     canal chiffré : SRP-6a (code PIN), AES-256-GCM, limite d'essais (Java)
+  .../res/values*/  textes FR (défaut) et EN, thème ; res/raw : textes légaux
+desktop/python/     viewer Windows : vc_ui (interface), vc_stream (flux, audio), vc_secure (canal chiffré + pont local), vc_i18n (langues), vc_settings, vc_legal
+desktop/windows/    icône et script de build
+tools/              faux téléphone, tests, générateur des textes légaux (gen_legal.py)
+docs/SECURITY.md                            protocole de sécurité, modèle de menace, limites
+PRIVACY.md TERMS.md NOTICE.md LICENCE      documents légaux et licences
+```
+
+Les textes légaux (confidentialité, conditions) ont **une seule source** : `tools/gen_legal.py` ; modifiez‑le puis lancez `python tools/gen_legal.py` pour régénérer `PRIVACY.md`, `TERMS.md`, les textes de l'app Android et du viewer.
+
+---
+
+## 6. Confidentialité, légal et propriété intellectuelle
+
+- **Aucune donnée collectée** par l'éditeur : pas de compte, de serveur, de publicité ni d'outil d'analyse. L'écran et le son vont **directement** du téléphone au PC sur votre réseau local ; rien n'est enregistré.
+- Le flux est **chiffré (AES‑256) et protégé par code PIN** par défaut ; le *mode ouvert* (désactivable) ne protège rien. Voir [docs/SECURITY.md](docs/SECURITY.md).
+- Détails : [Politique de confidentialité](PRIVACY.md) · [Conditions d'utilisation](TERMS.md) · [Notices tiers](NOTICE.md) (aussi consultables dans les deux applications, onglet *Paramètres ▸ À propos*).
+- **Propriété intellectuelle** : ViewCast (nom, logo, interface, code, documentation) © 2026 **Alphonse MUMBA**. Code sous licence MIT ([LICENCE](LICENCE)) ; le nom et le logo restent la propriété de l'auteur.
+- **Contact / support** : **mumbalpha@gmail.com**
+
+---
+
+## 7. Feuille de route
+
+1. ✅ **Sécurité** : code PIN + chiffrement de bout en bout (cette version).
+2. ⏭️ **Connexion par QR code** : l'ordinateur affiche un QR code (adresse + code), le **smartphone le scanne** et se connecte ; plus rien à saisir.
+3. ⏭️ **Rôles symétriques** : chaque appareil pourra être **diffuseur ou récepteur** — téléphone → PC, PC → téléphone, téléphone ↔ téléphone, PC ↔ PC. Le canal sécurisé actuel est déjà conçu pour cela (le sens de connexion est indépendant du sens des médias).

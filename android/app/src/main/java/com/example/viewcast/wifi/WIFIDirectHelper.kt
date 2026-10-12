@@ -21,10 +21,11 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 
 class WiFiDirectHelper(private val context: Context) {
 
-    private val manager: WifiP2pManager =
-        context.getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
-    private val channel: WifiP2pManager.Channel =
-        manager.initialize(context, context.mainLooper, null)
+    // Certains appareils n'ont pas de Wi‑Fi Direct : tout est alors simplement inactif (pas de plantage).
+    private val manager: WifiP2pManager? =
+        context.getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
+    private val channel: WifiP2pManager.Channel? =
+        manager?.initialize(context, context.mainLooper, null)
 
     val events = MutableSharedFlow<Event>(
         replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST
@@ -50,7 +51,9 @@ class WiFiDirectHelper(private val context: Context) {
                 }
                 WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
                     if (!hasPerm()) return
-                    manager.requestPeers(channel) { peers -> tryEmit(Event.Peers(peers.deviceList.toList())) }
+                    val m = manager ?: return
+                    val ch = channel ?: return
+                    m.requestPeers(ch) { peers -> tryEmit(Event.Peers(peers.deviceList.toList())) }
                 }
                 WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
                     val info = IntentCompat.getParcelableExtra(
@@ -68,6 +71,7 @@ class WiFiDirectHelper(private val context: Context) {
     }
 
     fun register() {
+        if (manager == null) return
         val filter = IntentFilter().apply {
             addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
             addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
@@ -96,7 +100,13 @@ class WiFiDirectHelper(private val context: Context) {
             tryEmit(Event.Error("permission Wi‑Fi Direct refusée"))
             return
         }
-        manager.discoverPeers(channel, object : WifiP2pManager.ActionListener {
+        val m = manager
+        val ch = channel
+        if (m == null || ch == null) {
+            tryEmit(Event.Error("Wi‑Fi Direct indisponible"))
+            return
+        }
+        m.discoverPeers(ch, object : WifiP2pManager.ActionListener {
             override fun onSuccess() {}
             override fun onFailure(reason: Int) {
                 tryEmit(Event.Error("discoverPeers a échoué ($reason)"))
@@ -107,12 +117,14 @@ class WiFiDirectHelper(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun connect(device: WifiP2pDevice) {
         if (!hasPerm()) return
+        val m = manager ?: return
+        val ch = channel ?: return
         val config = WifiP2pConfig().apply {
             deviceAddress = device.deviceAddress
             wps.setup = WpsInfo.PBC
             groupOwnerIntent = 7 // essaie de rester Group Owner (IP 192.168.49.1)
         }
-        manager.connect(channel, config, object : WifiP2pManager.ActionListener {
+        m.connect(ch, config, object : WifiP2pManager.ActionListener {
             override fun onSuccess() {}
             override fun onFailure(reason: Int) {
                 tryEmit(Event.Error("connexion échouée ($reason)"))

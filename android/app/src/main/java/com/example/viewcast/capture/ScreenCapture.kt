@@ -29,12 +29,12 @@ class ScreenCapture(
     private val height: Int,
     private val bitrate: Int,
     private val fps: Int,
-    private val keyFrameIntervalSec: Int = 1
+    private val lowLatency: Boolean = true
 ) {
     /** SPS et PPS (sans start code). Appelé dès que l'encodeur les publie. */
     var onParameterSets: ((sps: ByteArray, pps: ByteArray) -> Unit)? = null
 
-    /** Une image encodée = une ou plusieurs NAL units (sans start code). */
+    /** Une image encodée = une ou plusieurs NAL units (sans start code) ; ptsUs sur l'horloge monotone. */
     var onFrame: ((nals: List<ByteArray>, ptsUs: Long, isKeyFrame: Boolean) -> Unit)? = null
 
     /** La capture a été arrêtée par le système ou l'utilisateur. */
@@ -44,11 +44,16 @@ class ScreenCapture(
     private val stopped = AtomicBoolean(false)
 
     @Volatile private var running = false
-    private var projection: MediaProjection? = null
+    /** Exposé pour la capture audio (AudioPlaybackCapture a besoin de la même MediaProjection). */
+    var projection: MediaProjection? = null
+        private set
     private var virtualDisplay: VirtualDisplay? = null
     private var codec: MediaCodec? = null
     private var inputSurface: Surface? = null
     private var drainThread: Thread? = null
+
+    // Instants vidéo ramenés sur l'horloge monotone (System.nanoTime()/1000), commune avec l'audio.
+    private var ptsOffsetUs: Long? = null
 
     private var lastSps: ByteArray? = null
     private var lastPps: ByteArray? = null
@@ -91,15 +96,16 @@ class ScreenCapture(
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
                 setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
                 setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, keyFrameIntervalSec)
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, if (lowLatency) 1 else 2)
                 // Écran statique => l'encodeur ne produit rien : on force la répétition de la dernière image.
                 setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 500_000L)
                 setInteger(MediaFormat.KEY_PRIORITY, 0) // temps réel
-                if (Build.VERSION.SDK_INT >= 30) setInteger(MediaFormat.KEY_LATENCY, 1)
+                if (lowLatency && Build.VERSION.SDK_INT >= 30) setInteger(MediaFormat.KEY_LATENCY, 1)
                 if (strict) {
                     setInteger(
                         MediaFormat.KEY_BITRATE_MODE,
-                        MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR
+                        if (lowLatency) MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR
+                        else MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR
                     )
                     setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)
                 }
@@ -167,7 +173,8 @@ class ScreenCapture(
         if (video.isEmpty()) return
         val isKey = (info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0 ||
             video.any { H264.nalType(it) == H264.NAL_IDR }
-        onFrame?.invoke(video, info.presentationTimeUs, isKey)
+        val offset = ptsOffsetUs ?: (System.nanoTime() / 1000 - info.presentationTimeUs).also { ptsOffsetUs = it }
+        onFrame?.invoke(video, info.presentationTimeUs + offset, isKey)
     }
 
     private fun publishConfig(nals: List<ByteArray>) {

@@ -1,3 +1,7 @@
 opencv-python>=4.8
 numpy
+Pillow>=10
+av>=12
+sounddevice>=0.4.6
+cryptography>=42
 pyinstaller>=6.0

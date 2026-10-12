@@ -1,0 +1,48 @@
+Privacy Policy — ViewCast
+
+Last updated: October 9, 2026
+Publisher and controller: Alphonse MUMBA — mumbalpha@gmail.com
+
+1. Purpose
+ViewCast (the "ViewCast" Android app and the "ViewCast Viewer" Windows receiver) streams the screen and sound of an Android phone to a computer on the same local network. This document explains what data is processed, why, and how you control it.
+
+2. General principle
+Alphonse MUMBA does not collect, receive or store any personal data about you. ViewCast has no user accounts, no publisher servers, no advertising, no analytics and no trackers. All processing happens on your phone and your computer.
+
+3. Data processed on your devices
+• Screen image and internal phone sound: captured only after your explicit permission (system screen-capture prompt, microphone permission for sound) and only while casting. They are sent directly to the receiver you connect on your network. They are not recorded, kept, or sent to the publisher or any third party.
+• The stream may contain personal or sensitive information shown on screen (messages, passwords, notifications). You are responsible for it: check what is visible before casting. Windows protected by Android (for example some banking apps) are not captured.
+• Settings: language, quality, bitrate, options and the last address entered, stored locally (Android: the app's private storage; Windows: the %APPDATA%\ViewCast folder).
+• PIN code: generated on the phone for every cast and shown on screen; it is never stored, never sent over the network (proof of knowledge is cryptographic), and never kept by the Windows receiver.
+• Technical network data: local IP addresses of the phone and PC, Wi‑Fi Direct device names, used only to establish the local connection.
+
+4. Android permissions and purposes
+• Screen capture (MediaProjection): capture the image to stream. Requested every time you start.
+• Microphone / Record audio (RECORD_AUDIO): required by Android to capture the internal sound of apps. The physical microphone is not used.
+• Internet, network state, Wi‑Fi: open the local streaming port and show the IP address to enter on the PC. No data is sent over the Internet.
+• Nearby Wi‑Fi devices / Location (Wi‑Fi Direct): required by Android to look for Wi‑Fi Direct devices. Your location is neither read nor stored.
+• Foreground service and notifications: keep casting active and let you stop it.
+
+5. Network and security
+The stream travels over your local network (TCP port 8554). By default it is encrypted (AES‑256‑GCM) and protected by a 6‑digit PIN, shown on the phone and renewed for every cast: authentication uses the SRP‑6a protocol, which never transmits the code, and the phone generates a new code after 5 wrong attempts. Only a device that knows the code can receive and decrypt the cast. You may turn this protection off ("open mode", plain RTSP, useful for VLC or ffplay): anyone on the same network who knows the address can then watch the cast while it is active. Even when encrypted, use a trusted network (home, personal hotspot protected with WPA2/WPA3), avoid public Wi‑Fi, and stop casting when you are done.
+
+6. Sharing with third parties
+No data is shared, sold or transferred. The app bundles open-source libraries (see the NOTICE file) that run locally and transmit nothing.
+
+7. Retention
+No streaming data is retained. Settings remain until you delete them: Android → Settings → Apps → ViewCast → Storage → Clear data (or uninstall); Windows → delete the %APPDATA%\ViewCast folder.
+
+8. Your rights
+Since the publisher holds no personal data about you, there is nothing to disclose or erase; you keep local control of your settings. For any access, rectification, erasure or objection request provided by applicable law (including the GDPR), or any question: mumbalpha@gmail.com.
+
+9. Children
+ViewCast is not directed to children under 13 and collects no data from them.
+
+10. Intellectual property
+ViewCast — name, logo, interface, code and documentation — is the property of Alphonse MUMBA. © 2026 Alphonse MUMBA. The source code is published under the MIT license (LICENCE file); the ViewCast name and logo remain the author's property. Third-party libraries remain the property of their respective authors and are subject to their licenses.
+
+11. Changes
+This policy may change with the app. The update date is shown at the top; significant changes will be mentioned in the release notes.
+
+12. Contact
+Alphonse MUMBA — mumbalpha@gmail.com
