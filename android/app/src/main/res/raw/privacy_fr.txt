@@ -4,13 +4,14 @@ Dernière mise à jour : 9 octobre 2026
 Éditeur et responsable : Alphonse MUMBA — mumbalpha@gmail.com
 
 1. Objet
-ViewCast (application Android « ViewCast » et récepteur Windows « ViewCast Viewer ») diffuse l'écran et le son d'un téléphone Android vers un ordinateur situé sur le même réseau local. Ce document explique quelles données sont traitées, pourquoi, et comment vous les contrôlez.
+ViewCast (application Android « ViewCast » et récepteur Windows « ViewCast Viewer ») diffuse l'écran et le son d'un téléphone Android vers un ordinateur ou un autre téléphone situé sur le même réseau local. Ce document explique quelles données sont traitées, pourquoi, et comment vous les contrôlez.
 
 2. Principe général
 Alphonse MUMBA ne collecte, ne reçoit et ne stocke aucune donnée personnelle vous concernant. ViewCast n'a ni compte utilisateur, ni serveur de l'éditeur, ni publicité, ni outil d'analyse, ni traceur. Tout le traitement a lieu sur votre téléphone et votre ordinateur.
 
 3. Données traitées sur vos appareils
 • Image de l'écran et son interne du téléphone : capturés uniquement après votre autorisation explicite (fenêtre système de capture d'écran, permission micro pour le son) et seulement pendant la diffusion. Ils sont envoyés directement au récepteur que vous connectez sur votre réseau. Ils ne sont ni enregistrés, ni conservés, ni transmis à l'éditeur ou à un tiers.
+• Image et son reçus (fonction « Recevoir ») : affichés et lus en direct sur l'appareil récepteur ; ni enregistrés ni conservés, aucune permission supplémentaire n'est nécessaire.
 • Ce flux peut contenir des informations personnelles ou sensibles affichées à l'écran (messages, mots de passe, notifications). Vous en êtes responsable : vérifiez ce qui est visible avant de diffuser. Les fenêtres protégées par Android (par exemple certaines applications bancaires) ne sont pas capturées.
 • Réglages : langue, qualité, débit, options et dernière adresse saisie, stockés localement (Android : stockage privé de l'application ; Windows : dossier %APPDATA%\ViewCast).
 • Code PIN : généré sur le téléphone pour chaque diffusion et affiché à l'écran ; il n'est jamais enregistré, ni transmis sur le réseau (la preuve de connaissance est cryptographique), ni conservé par le récepteur Windows.

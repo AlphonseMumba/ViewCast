@@ -11,7 +11,7 @@ Raccourcis : F plein écran · M muet · Espace pause · Échap quitter/arrêter
 import sys
 import traceback
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 
 def _show_error(message):

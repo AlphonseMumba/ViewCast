@@ -36,5 +36,10 @@
 - **Windows** : champ PIN, pont local chiffré `SecureProxy` (FFmpeg parle en clair à 127.0.0.1), messages d'erreur dédiés, pas de nouvel essai automatique après un refus, badge « Chiffré » dans le HUD.
 - **Tests** : `test_secure_protocol.py` (17), `test_e2e_secure.py` (14), `test_viewer_logic.py` (63), JUnit `SrpVectorsTest`.
 
+## Téléphone ↔ téléphone (v1.4.0)
+- **Réception sur Android** : nouvel onglet *Recevoir* (adresse + code PIN), image décodée par MediaCodec sur une SurfaceView, son AAC joué par AudioTrack, commandes (son, plein écran, déconnexion), mesures en direct, messages d'erreur dédiés.
+- **Client RTSP en Java pur** (`receive/RtspPlayer.java`) : canal chiffré ou mode ouvert, SDP, H.264 (NAL seule + FU-A), AAC (AAC-hbr), keep-alive ; testé contre le serveur de test (`tools/test_receiver_java.py`, 14 tests : image 720x1280 décodée, son 440 Hz intact, bon/mauvais PIN, mode ouvert, appareil introuvable).
+- La rotation de l'écran ne coupe plus la réception ; un téléphone ne peut pas diffuser et recevoir en même temps.
+
 ## Non traité
 CI GitHub (`github/` n'est toujours pas `.github/`), iOS, macOS, sécurité (authentification/TLS).
