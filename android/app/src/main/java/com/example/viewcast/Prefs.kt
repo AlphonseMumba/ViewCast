@@ -35,4 +35,9 @@ class Prefs(context: Context) {
     var secure: Boolean
         get() = sp.getBoolean("secure", true)
         set(v) = sp.edit().putBoolean("secure", v).apply()
+
+    /** Dernière adresse saisie pour recevoir (le code PIN n'est JAMAIS enregistré). */
+    var rxAddress: String
+        get() = sp.getString("rx_address", "") ?: ""
+        set(v) = sp.edit().putString("rx_address", v).apply()
 }

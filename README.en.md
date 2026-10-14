@@ -17,6 +17,8 @@
 
 The phone is the **server** (RTSP, TCP port 8554): the **PC connects to the phone** by typing its address. Nothing goes through the Internet or any publisher server.
 
+**New (1.4)**: a phone can also **receive** another phone's screen and sound (**Receive** tab, see §2.7).
+
 Languages: **French** (default) and **English**, selectable in the *Settings* of both apps.
 
 ---
@@ -79,6 +81,17 @@ In the phone's **Discover** tab tap **Refresh**: nearby Wi‑Fi Direct devices a
 - **5 wrong attempts ⇒ new code** generated automatically (the app tells you).
 - **Open mode** (switch off): plain RTSP, works with VLC/ffplay, but **anyone on the network can watch**. For tests only.
 - Details, protocol and limits: [docs/SECURITY.md](docs/SECURITY.md). The protocol has not been audited by a third party.
+
+### 2.7 Phone ↔ phone (new)
+
+One phone **casts** (as usual), the other **receives**:
+
+1. **Phone A (sender)**: *Connect* tab → **Start casting**. Note the address (e.g. `192.168.43.1`) and the **PIN**.
+2. **Phone B (receiver)**: **Receive** tab → enter A's address and PIN (leave the PIN empty if A is in open mode) → **Connect and receive**.
+3. A's screen appears on B, with sound. Tap the screen to show the controls: **Sound / Muted**, **Fullscreen**, **Disconnect**; resolution, bitrate and fps are shown.
+4. Network: both phones on the same Wi‑Fi, or B joined to A's hotspot (most reliable: A turns on its hotspot, B joins it).
+
+Notes: receiving stops when you leave the app; a phone **cannot cast and receive at the same time** (it would see itself); the same encryption and PIN protect the link (see §2.6). Errors (address, wrong PIN, too many attempts, lost connection) are explained on screen.
 
 ---
 
@@ -156,6 +169,7 @@ The executable bundles FFmpeg (PyAV), PortAudio and the icon; expect tens of MB.
 python tools/test_viewer_logic.py          # 63 viewer-logic tests (no display needed)
 python tools/test_secure_protocol.py       # 17 secure-channel tests, incl. Python <-> Java (the real Android code)
 python tools/test_e2e_secure.py            # 14 end-to-end tests: encryption, wrong PIN, network sniffer (ffmpeg required)
+python tools/test_receiver_java.py         # 14 tests of the Android RECEIVE client (real Java code): picture, sound, PIN, open (ffmpeg required)
 (cd android && ./gradlew test)             # same cryptographic vectors on Android (JUnit)
 
 python tools/fake_phone_server.py --pin 482913     # encrypted fake phone: test pattern + 440 Hz tone (ffmpeg required)
@@ -164,7 +178,7 @@ python desktop/python/viewcast_viewer.py 127.0.0.1:8554    # then type PIN 48291
 
 ### 4.4 Publishing a release (GitHub Releases)
 
-1. Merge into `main`, then `git tag v1.3.0 && git push origin v1.3.0`.
+1. Merge into `main`, then `git tag v1.4.0 && git push origin v1.4.0`.
 2. On GitHub: *Releases ▸ Draft a new release* → pick the tag → attach `ViewCast.apk` and `ViewCastViewer.exe` → *Publish release*.
 3. Link `https://github.com/AlphonseMumba/ViewCast/releases/latest` from your pages.
 
@@ -173,7 +187,7 @@ python desktop/python/viewcast_viewer.py 127.0.0.1:8554    # then type PIN 48291
 ## 5. Repository layout
 
 ```
-android/            Android app (Kotlin, Jetpack Compose): ui/, rtsp/, capture/, security/ (Java: SRP-6a PIN, AES-256-GCM), res/values (FR) + values-en (EN), res/raw (legal texts)
+android/            Android app (Kotlin, Jetpack Compose): ui/, rtsp/, capture/, security/ (Java: SRP-6a PIN, AES-256-GCM), receive/ (RTSP client in Java + decoding), res/values (FR) + values-en (EN), res/raw (legal texts)
 desktop/python/     Windows viewer: vc_ui (interface), vc_stream (stream, audio), vc_secure (encrypted channel + local bridge), vc_i18n (languages), vc_settings, vc_legal
 desktop/windows/    icon and build script
 tools/              fake phone, tests, legal text generator (gen_legal.py)
@@ -199,4 +213,4 @@ Legal texts have **one source**: `tools/gen_legal.py`; edit it then run `python 
 
 1. ✅ **Security**: PIN + end-to-end encryption (this version).
 2. ⏭️ **QR-code connection**: the computer shows a QR code (address + code), the **smartphone scans it** and connects; nothing to type.
-3. ⏭️ **Symmetric roles**: every device will be able to be a **sender or a receiver** — phone → PC, PC → phone, phone ↔ phone, PC ↔ PC. The current secure channel is already designed for it (the connection direction is independent of the media direction).
+3. 🔶 **Symmetric roles**: ✅ **phone → phone** (version 1.4). ⏭️ **PC as sender** (PC → phone, PC ↔ PC): the PC will have to capture its screen and system sound, then encode them; the current secure channel is already designed for it (the connection direction is independent of the media direction).

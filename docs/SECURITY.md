@@ -39,6 +39,8 @@ Les messages sont encadrés `type (1) | longueur (2) | contenu`. Toutes les vale
 
 **Le sens de connexion TCP est indépendant du sens des médias** : le canal est symétrique (celui qui se connecte joue le rôle « client SRP », celui qui écoute affiche le PIN). Cette propriété sert de base aux évolutions prévues (QR code, rôles émetteur/récepteur sur tous les appareils).
 
+**Réception sur téléphone** : l'onglet *Recevoir* utilise le même client (`SecureChannel.clientHandshake`) que le PC ; un PIN refusé n'est jamais réessayé automatiquement.
+
 ## 3. Gestion du code PIN
 
 - 6 chiffres aléatoires (`SecureRandom`), **nouveau à chaque diffusion** ; jamais enregistré, ni sur le téléphone, ni sur le PC.

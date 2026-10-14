@@ -32,6 +32,19 @@ class AppState(private val prefs: Prefs) {
     var p2pStatus by mutableStateOf("")
     var searching by mutableStateOf(false)
 
+    // Réception (cet appareil reçoit l'écran d'un autre)
+    var rxAddress by mutableStateOf(prefs.rxAddress)
+    var rxPin by mutableStateOf("")
+    var rxState by mutableStateOf("idle") // idle | invalid_addr | invalid_pin | connecting | waiting | playing | unreachable | auth | locked | protocol | dropped
+    var rxWidth by mutableStateOf(0)
+    var rxHeight by mutableStateOf(0)
+    var rxMbps by mutableStateOf(0f)
+    var rxFps by mutableStateOf(0)
+    var rxMuted by mutableStateOf(false)
+    var rxFullscreen by mutableStateOf(false)
+    var rxControls by mutableStateOf(true)
+    val rxActive: Boolean get() = rxState == "connecting" || rxState == "waiting" || rxState == "playing"
+
     // Réglages
     var language by mutableStateOf(prefs.language)
     var quality by mutableStateOf(prefs.quality)
@@ -41,6 +54,7 @@ class AppState(private val prefs: Prefs) {
     var audioEnabled by mutableStateOf(prefs.audio)
     var secure by mutableStateOf(prefs.secure)
 
+    fun updateRxAddress(v: String) { rxAddress = v; prefs.rxAddress = v }
     fun updateQuality(v: String) { quality = v; prefs.quality = v }
     fun updateFps(v: Int) { fps = v; prefs.fps = v }
     fun updateBitrate(v: Int) { bitrateMbps = v; prefs.bitrateMbps = v }
@@ -66,4 +80,9 @@ interface Actions {
     fun setLanguage(code: String)
     fun toggleSound()
     fun sendMail()
+    fun connectReceive()
+    fun disconnectReceive()
+    fun setSurface(surface: android.view.Surface?)
+    fun toggleReceiveSound()
+    fun setReceiveFullscreen(on: Boolean)
 }

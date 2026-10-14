@@ -9,6 +9,9 @@ __pycache__/
 env/
 venv/
 
+# windows
+*.exe 
+
 # Android/Gradle
 android/.gradle/
 android/.idea/

@@ -17,6 +17,8 @@
 
 Le téléphone fait office de **serveur** (RTSP, port TCP 8554) : c'est le **PC qui se connecte au téléphone** en saisissant son adresse. Rien ne passe par Internet ni par un serveur de l'éditeur.
 
+**Nouveau (1.4)** : un téléphone peut aussi **recevoir** l'écran et le son d'un autre téléphone (onglet **Recevoir**, voir §2.7).
+
 Langues : **français** (par défaut) et **anglais**, au choix dans les *Paramètres* des deux applications.
 
 ---
@@ -79,6 +81,17 @@ Dans l'onglet **Découverte** du téléphone, touchez **Actualiser** : les appar
 - **5 essais incorrects ⇒ nouveau code** généré automatiquement (l'application vous le signale).
 - **Mode ouvert** (interrupteur désactivé) : RTSP en clair, compatible VLC/ffplay, mais **n'importe qui sur le réseau peut regarder**. À réserver aux tests.
 - Détails, protocole et limites : [docs/SECURITY.md](docs/SECURITY.md). Le protocole n'a pas été audité par un tiers.
+
+### 2.7 Téléphone ↔ téléphone (nouveau)
+
+Un téléphone **diffuse** (comme d'habitude), l'autre **reçoit** :
+
+1. **Téléphone A (émetteur)** : onglet *Connexion* → **Démarrer la diffusion**. Notez l'adresse (ex. `192.168.43.1`) et le **code PIN**.
+2. **Téléphone B (récepteur)** : onglet **Recevoir** → saisissez l'adresse de A et son code PIN (laissez le code vide si A est en mode ouvert) → **Se connecter et recevoir**.
+3. L'écran de A s'affiche sur B, avec le son. Touchez l'écran pour afficher les commandes : **Son / Muet**, **Plein écran**, **Déconnecter** ; la définition, le débit et les images/s sont affichés.
+4. Réseau : les deux téléphones sur le même Wi‑Fi, ou B connecté au point d'accès de A (le plus fiable : A active son partage de connexion, B s'y connecte).
+
+Remarques : la réception s'arrête quand vous quittez l'application ; un téléphone **ne peut pas diffuser et recevoir en même temps** (il se verrait lui‑même) ; le même chiffrement et le même code PIN protègent la liaison (voir §2.6). Les erreurs (adresse, code incorrect, trop d'essais, connexion perdue) sont expliquées à l'écran.
 
 ---
 
@@ -170,6 +183,7 @@ L'exécutable embarque FFmpeg (PyAV), PortAudio et l'icône ; il pèse plusieurs
 python tools/test_viewer_logic.py          # 63 tests de la logique du viewer (aucun écran requis)
 python tools/test_secure_protocol.py       # 17 tests du canal chiffré, dont Python <-> Java (vrai code Android)
 python tools/test_e2e_secure.py            # 14 tests de bout en bout : chiffrement, mauvais PIN, espion réseau (ffmpeg requis)
+python tools/test_receiver_java.py         # 14 tests du client de RÉCEPTION Android (vrai code Java) : image, son, PIN, ouvert (ffmpeg requis)
 (cd android && ./gradlew test)             # mêmes vecteurs cryptographiques côté Android (JUnit)
 
 python tools/fake_phone_server.py --pin 482913     # faux téléphone chiffré : mire + son 440 Hz (ffmpeg requis)
@@ -178,7 +192,7 @@ python desktop/python/viewcast_viewer.py 127.0.0.1:8554    # puis saisir le code
 
 ### 4.4 Publier une version (GitHub Releases)
 
-1. Fusionnez la branche dans `main`, puis `git tag v1.3.0 && git push origin v1.3.0`.
+1. Fusionnez la branche dans `main`, puis `git tag v1.4.0 && git push origin v1.4.0`.
 2. Sur GitHub : *Releases ▸ Draft a new release* → choisissez le tag → joignez `ViewCast.apk` et `ViewCastViewer.exe` → *Publish release*.
 3. Ajoutez le lien `https://github.com/AlphonseMumba/ViewCast/releases/latest` à vos pages de présentation.
 
@@ -192,6 +206,7 @@ android/            application Android (Kotlin, Jetpack Compose)
   .../rtsp/         serveur RTSP/RTP, service de diffusion
   .../capture/      capture d'écran + encodage H.264, capture du son + AAC
   .../security/     canal chiffré : SRP-6a (code PIN), AES-256-GCM, limite d'essais (Java)
+  .../receive/      réception : client RTSP + dépaquetage (Java), décodage image/son (Kotlin)
   .../res/values*/  textes FR (défaut) et EN, thème ; res/raw : textes légaux
 desktop/python/     viewer Windows : vc_ui (interface), vc_stream (flux, audio), vc_secure (canal chiffré + pont local), vc_i18n (langues), vc_settings, vc_legal
 desktop/windows/    icône et script de build
@@ -218,4 +233,4 @@ Les textes légaux (confidentialité, conditions) ont **une seule source** : `to
 
 1. ✅ **Sécurité** : code PIN + chiffrement de bout en bout (cette version).
 2. ⏭️ **Connexion par QR code** : l'ordinateur affiche un QR code (adresse + code), le **smartphone le scanne** et se connecte ; plus rien à saisir.
-3. ⏭️ **Rôles symétriques** : chaque appareil pourra être **diffuseur ou récepteur** — téléphone → PC, PC → téléphone, téléphone ↔ téléphone, PC ↔ PC. Le canal sécurisé actuel est déjà conçu pour cela (le sens de connexion est indépendant du sens des médias).
+3. 🔶 **Rôles symétriques** : ✅ **téléphone → téléphone** (version 1.4). ⏭️ **PC diffuseur** (PC → téléphone, PC ↔ PC) : le PC devra capturer son écran et son son système, puis les encoder ; le canal sécurisé actuel est déjà conçu pour cela (le sens de connexion est indépendant du sens des médias).

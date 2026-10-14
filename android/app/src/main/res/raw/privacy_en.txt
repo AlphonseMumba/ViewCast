@@ -4,13 +4,14 @@ Last updated: October 9, 2026
 Publisher and controller: Alphonse MUMBA — mumbalpha@gmail.com
 
 1. Purpose
-ViewCast (the "ViewCast" Android app and the "ViewCast Viewer" Windows receiver) streams the screen and sound of an Android phone to a computer on the same local network. This document explains what data is processed, why, and how you control it.
+ViewCast (the "ViewCast" Android app and the "ViewCast Viewer" Windows receiver) streams the screen and sound of an Android phone to a computer or another phone on the same local network. This document explains what data is processed, why, and how you control it.
 
 2. General principle
 Alphonse MUMBA does not collect, receive or store any personal data about you. ViewCast has no user accounts, no publisher servers, no advertising, no analytics and no trackers. All processing happens on your phone and your computer.
 
 3. Data processed on your devices
 • Screen image and internal phone sound: captured only after your explicit permission (system screen-capture prompt, microphone permission for sound) and only while casting. They are sent directly to the receiver you connect on your network. They are not recorded, kept, or sent to the publisher or any third party.
+• Picture and sound received ("Receive" feature): shown and played live on the receiving device; not recorded or kept, and no extra permission is needed.
 • The stream may contain personal or sensitive information shown on screen (messages, passwords, notifications). You are responsible for it: check what is visible before casting. Windows protected by Android (for example some banking apps) are not captured.
 • Settings: language, quality, bitrate, options and the last address entered, stored locally (Android: the app's private storage; Windows: the %APPDATA%\ViewCast folder).
 • PIN code: generated on the phone for every cast and shown on screen; it is never stored, never sent over the network (proof of knowledge is cryptographic), and never kept by the Windows receiver.

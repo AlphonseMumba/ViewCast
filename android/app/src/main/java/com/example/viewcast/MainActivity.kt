@@ -14,13 +14,21 @@ import android.net.wifi.p2p.WifiP2pDevice
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.view.Surface
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.viewcast.net.NetUtils
+import com.example.viewcast.receive.ReceiverSession
+import com.example.viewcast.receive.RxAddress
+import com.example.viewcast.security.PinGuard
 import com.example.viewcast.rtsp.ScreenCastService
 import com.example.viewcast.ui.Actions
 import com.example.viewcast.ui.AppState
@@ -35,6 +43,8 @@ class MainActivity : ComponentActivity(), Actions {
     private lateinit var prefs: Prefs
     private lateinit var state: AppState
     private lateinit var wifi: WiFiDirectHelper
+    private var rx: ReceiverSession? = null
+    private var currentSurface: Surface? = null
 
     private val wifiPermission: String
         get() = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES
@@ -127,6 +137,8 @@ class MainActivity : ComponentActivity(), Actions {
         lifecycleScope.launch {
             var lastBytes = 0L
             var lastFrames = 0L
+            var lastRxBytes = 0L
+            var lastRxFrames = 0L
             var lastT = SystemClock.elapsedRealtime()
             while (true) {
                 val now = SystemClock.elapsedRealtime()
@@ -159,6 +171,37 @@ class MainActivity : ComponentActivity(), Actions {
                     state.clients = 0
                 }
                 state.ips = NetUtils.localIpv4Addresses()
+
+                // Réception : état, définition, débit et images/s mesurés
+                val session = rx
+                if (session != null) {
+                    state.rxState = when (session.state) {
+                        ReceiverSession.State.CONNECTING -> "connecting"
+                        ReceiverSession.State.WAITING_VIDEO -> "waiting"
+                        ReceiverSession.State.PLAYING -> "playing"
+                        ReceiverSession.State.UNREACHABLE -> "unreachable"
+                        ReceiverSession.State.AUTH -> "auth"
+                        ReceiverSession.State.LOCKED -> "locked"
+                        ReceiverSession.State.PROTOCOL -> "protocol"
+                        ReceiverSession.State.DROPPED -> "dropped"
+                        ReceiverSession.State.STOPPED -> "idle"
+                    }
+                    state.rxWidth = session.width
+                    state.rxHeight = session.height
+                    val rb = session.bytesReceived
+                    val rf = session.framesShown.get()
+                    state.rxMbps = ((rb - lastRxBytes) * 8f / 1_000_000f / dt).coerceAtLeast(0f)
+                    state.rxFps = ((rf - lastRxFrames) / dt).roundToInt().coerceAtLeast(0)
+                    lastRxBytes = rb
+                    lastRxFrames = rf
+                    if (!state.rxActive) {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        if (state.rxFullscreen) setReceiveFullscreen(false)
+                    }
+                } else {
+                    lastRxBytes = 0L
+                    lastRxFrames = 0L
+                }
                 delay(1000)
             }
         }
@@ -227,6 +270,68 @@ class MainActivity : ComponentActivity(), Actions {
         }
     }
 
+    // ───────── Réception (recevoir l'écran d'un autre appareil) ─────────
+
+    override fun connectReceive() {
+        if (state.casting) {
+            Toast.makeText(this, R.string.rx_busy_casting, Toast.LENGTH_LONG).show()
+            return
+        }
+        val target = RxAddress.parse(state.rxAddress)
+        if (target == null) {
+            state.rxState = "invalid_addr"
+            return
+        }
+        val pin = state.rxPin.trim()
+        if (pin.isNotEmpty() && !PinGuard.isValid(pin)) {
+            state.rxState = "invalid_pin"
+            return
+        }
+        rx?.stop()
+        state.updateRxAddress(state.rxAddress.trim())
+        state.rxMuted = false
+        state.rxWidth = 0
+        state.rxHeight = 0
+        state.rxControls = true
+        val session = ReceiverSession(target.first, target.second, pin.ifEmpty { null })
+        rx = session
+        currentSurface?.let { session.setSurface(it) }
+        session.start()
+        state.rxState = "connecting"
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    override fun disconnectReceive() {
+        rx?.stop()
+        rx = null
+        state.rxState = "idle"
+        state.rxPin = "" // le code n'est jamais conservé
+        setReceiveFullscreen(false)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    override fun setSurface(surface: Surface?) {
+        currentSurface = surface
+        rx?.setSurface(surface)
+    }
+
+    override fun toggleReceiveSound() {
+        val session = rx ?: return
+        session.muted = !session.muted
+        state.rxMuted = session.muted
+    }
+
+    override fun setReceiveFullscreen(on: Boolean) {
+        state.rxFullscreen = on
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        if (on) {
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
     /** Taille de la vidéo : même rapport que l'écran (pas de déformation), dimensions paires, sans agrandir. */
     private fun captureSize(): Pair<Int, Int> {
         val dm = resources.displayMetrics
@@ -248,6 +353,7 @@ class MainActivity : ComponentActivity(), Actions {
 
     override fun onDestroy() {
         super.onDestroy()
-        wifi.unregister() // la diffusion continue en arrière-plan (service)
+        rx?.stop() // la réception s'arrête avec l'application ; la diffusion, elle, continue (service)
+        wifi.unregister()
     }
 }

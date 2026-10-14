@@ -2,10 +2,23 @@ package com.example.viewcast.ui
 
 import android.net.wifi.p2p.WifiP2pDevice
 import android.os.Build
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -81,16 +94,18 @@ import kotlin.math.roundToInt
 @Composable
 fun ViewCastApp(s: AppState, a: Actions) {
     ViewCastTheme {
+        val immersive = s.rxFullscreen && s.tab == 3 && s.rxActive
         Scaffold(
             containerColor = Vc.Surface,
-            topBar = { TopBar(s) },
-            bottomBar = { BottomBar(s) }
+            topBar = { if (!immersive) TopBar(s) },
+            bottomBar = { if (!immersive) BottomBar(s) }
         ) { padding ->
             Box(Modifier.padding(padding).fillMaxSize()) {
                 when (s.tab) {
                     0 -> ConnectScreen(s, a)
                     1 -> DiscoverScreen(s, a)
                     2 -> CastScreen(s, a)
+                    3 -> ReceiveScreen(s, a)
                     else -> SettingsScreen(s, a)
                 }
             }
@@ -104,6 +119,7 @@ private fun TopBar(s: AppState) {
         0 -> R.string.title_connect
         1 -> R.string.title_discover
         2 -> R.string.title_cast
+        3 -> R.string.title_receive
         else -> R.string.title_settings
     }
     Row(
@@ -137,6 +153,7 @@ private fun BottomBar(s: AppState) {
         Tab(R.string.nav_connect, Icons.Filled.Cast),
         Tab(R.string.nav_discover, Icons.Filled.Search),
         Tab(R.string.nav_cast, Icons.Filled.ScreenShare),
+        Tab(R.string.nav_receive, Icons.Filled.Tv),
         Tab(R.string.nav_settings, Icons.Filled.Settings)
     )
     NavigationBar(containerColor = Vc.SurfaceLow) {
@@ -436,7 +453,7 @@ fun CastScreen(s: AppState, a: Actions) {
                 if (s.audioMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
                 { a.toggleSound() }, enabled = s.audioActive
             )
-            SoftButton(stringResource(R.string.btn_stream_settings), Icons.Filled.Tune, { s.tab = 3 })
+            SoftButton(stringResource(R.string.btn_stream_settings), Icons.Filled.Tune, { s.tab = 4 })
         }
 
         VcCard(color = Vc.SurfaceLow) {
@@ -545,7 +562,7 @@ fun SettingsScreen(s: AppState, a: Actions) {
         VcCard {
             SectionTitle(Icons.Filled.Info, stringResource(R.string.set_about))
             val version = remember {
-                runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "1.3.0"
+                runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "1.4.0"
             }
             Text(stringResource(R.string.about_version, version), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Vc.OnSurface)
             Muted(stringResource(R.string.about_rights))
@@ -579,3 +596,116 @@ fun SettingsScreen(s: AppState, a: Actions) {
 
 private fun rawText(context: android.content.Context, resId: Int): String =
     runCatching { context.resources.openRawResource(resId).bufferedReader().use { it.readText() } }.getOrDefault("")
+
+
+// ───────────────────────────── Réception ─────────────────────────────
+
+@Composable
+fun ReceiveScreen(s: AppState, a: Actions) {
+    if (s.rxActive) ReceivePlayer(s, a) else ReceiveForm(s, a)
+}
+
+@Composable
+private fun ReceiveForm(s: AppState, a: Actions) {
+    val message = when (s.rxState) {
+        "invalid_addr" -> R.string.rx_err_addr
+        "invalid_pin" -> R.string.rx_err_pin
+        "unreachable" -> R.string.rx_err_unreachable
+        "auth" -> R.string.rx_err_auth
+        "locked" -> R.string.rx_err_locked
+        "protocol" -> R.string.rx_err_protocol
+        "dropped" -> R.string.rx_err_dropped
+        else -> null
+    }
+    val colors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = Vc.PrimaryContainer, unfocusedBorderColor = Vc.OutlineVariant,
+        focusedTextColor = Vc.OnSurface, unfocusedTextColor = Vc.OnSurface, cursorColor = Vc.Primary,
+        focusedLabelColor = Vc.Primary, unfocusedLabelColor = Vc.OnSurfaceVariant
+    )
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        VcCard {
+            Icon(Icons.Filled.Tv, contentDescription = null, tint = Vc.Primary, modifier = Modifier.size(30.dp))
+            Text(stringResource(R.string.rx_title), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Vc.OnSurface)
+            Muted(stringResource(R.string.rx_body))
+        }
+        VcCard {
+            OutlinedTextField(
+                value = s.rxAddress, onValueChange = { s.updateRxAddress(it) }, singleLine = true,
+                label = { Text(stringResource(R.string.rx_addr)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                colors = colors, modifier = Modifier.fillMaxWidth()
+            )
+            Muted(stringResource(R.string.rx_addr_hint))
+            OutlinedTextField(
+                value = s.rxPin, onValueChange = { v -> s.rxPin = v.filter { it.isDigit() }.take(6) }, singleLine = true,
+                label = { Text(stringResource(R.string.rx_pin)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                colors = colors, modifier = Modifier.fillMaxWidth()
+            )
+            Muted(stringResource(R.string.rx_pin_hint))
+            if (message != null) Text(stringResource(message), fontSize = 13.sp, color = Vc.Error)
+            GradientButton(stringResource(R.string.rx_connect), Icons.Filled.Tv, { a.connectReceive() }, enabled = !s.casting)
+            if (s.casting) Muted(stringResource(R.string.rx_busy_casting))
+        }
+    }
+}
+
+@Composable
+private fun ReceivePlayer(s: AppState, a: Actions) {
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+        val ratio = if (s.rxWidth > 0 && s.rxHeight > 0) s.rxWidth.toFloat() / s.rxHeight else 9f / 16f
+        AndroidView(
+            factory = { ctx ->
+                SurfaceView(ctx).apply {
+                    holder.addCallback(object : SurfaceHolder.Callback {
+                        override fun surfaceCreated(holder: SurfaceHolder) = a.setSurface(holder.surface)
+                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+                        override fun surfaceDestroyed(holder: SurfaceHolder) = a.setSurface(null)
+                    })
+                }
+            },
+            modifier = Modifier.aspectRatio(ratio)
+        )
+        // Couche transparente : un toucher affiche ou masque les commandes
+        Box(
+            modifier = Modifier.fillMaxSize().clickable(
+                interactionSource = remember { MutableInteractionSource() }, indication = null
+            ) { s.rxControls = !s.rxControls }
+        )
+        if (s.rxState != "playing") {
+            Text(
+                stringResource(if (s.rxState == "connecting") R.string.rx_connecting else R.string.rx_waiting),
+                fontSize = 16.sp, color = Vc.OnSurface
+            )
+        }
+        if (s.rxControls || s.rxState != "playing") {
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color(0xCC0E1320)).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (s.rxState == "playing") {
+                    Text(
+                        stringResource(R.string.rx_stats, s.rxWidth, s.rxHeight, s.rxMbps, s.rxFps),
+                        fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Vc.Tertiary
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    SoftButton(
+                        stringResource(if (s.rxMuted) R.string.rx_sound_off else R.string.rx_sound_on),
+                        if (s.rxMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, { a.toggleReceiveSound() }
+                    )
+                    SoftButton(
+                        stringResource(if (s.rxFullscreen) R.string.rx_exit_fullscreen else R.string.rx_fullscreen),
+                        if (s.rxFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                        { a.setReceiveFullscreen(!s.rxFullscreen) }
+                    )
+                    SoftButton(stringResource(R.string.rx_disconnect), Icons.Filled.Stop, { a.disconnectReceive() })
+                }
+                if (s.rxState == "playing") Muted(stringResource(R.string.rx_tap_hint))
+            }
+        }
+    }
+}
